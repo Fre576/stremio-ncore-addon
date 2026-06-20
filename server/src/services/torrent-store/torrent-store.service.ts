@@ -2,16 +2,18 @@ import { ChildProcessWithoutNullStreams, spawn } from 'node:child_process';
 import { TorrentSourceManager } from '../torrent-source';
 import {
   DuplicateTorrentCandidate,
+  StoredTorrentStats,
   TorrentFileResponse,
   TorrentResponse,
   TorrentStoreStats,
 } from './types';
 import { env } from '@/env';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { formatBytes } from '@/utils/bytes';
 import { globSync } from 'glob';
 import { TorrentServerSdk } from './torrent-server.sdk';
 import { sleep } from '@/utils/sleep';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 
 export class TorrentStoreService {
   private torrentServerUrl: string = `http://localhost:${env.TORRENT_SERVER_PORT}`;
@@ -19,8 +21,13 @@ export class TorrentStoreService {
   private torrentServerSdk: TorrentServerSdk = new TorrentServerSdk(
     this.torrentServerUrl,
   );
+  private statsFilePath = resolve(env.ADDON_DIR, 'config/torrent-stats.json');
+  private storedStats = new Map<string, StoredTorrentStats>();
+  private statsInterval: NodeJS.Timeout | null = null;
 
-  constructor(private torrentSource: TorrentSourceManager) {}
+  constructor(private torrentSource: TorrentSourceManager) {
+    this.loadStoredStats();
+  }
 
   public async startServer() {
     if (process.env.NODE_ENV === 'production') {
@@ -50,6 +57,7 @@ export class TorrentStoreService {
         }
       }
     }
+    this.startStatsPersistence();
   }
 
   private checkServer() {
@@ -63,28 +71,32 @@ export class TorrentStoreService {
   public async addTorrent(torrentFilePath: string): Promise<TorrentResponse> {
     this.checkServer();
     const torrent = await this.torrentServerSdk.addTorrent(torrentFilePath);
-    return torrent;
+    return this.mergeStoredStats(torrent);
   }
 
   public async getTorrent(infoHash: string): Promise<TorrentResponse | null> {
     this.checkServer();
     const torrent = await this.torrentServerSdk.getTorrent(infoHash);
-    return torrent;
+    return torrent ? this.mergeStoredStats(torrent) : null;
   }
 
   public async deleteTorrent(infoHash: string): Promise<void> {
     this.checkServer();
+    this.storedStats.delete(infoHash.toLowerCase());
+    this.saveStoredStats();
     return await this.torrentServerSdk.deleteTorrent(infoHash);
   }
 
   public async getAllTorrents(): Promise<TorrentResponse[]> {
     this.checkServer();
-    return await this.torrentServerSdk.getAllTorrents();
+    const torrents = await this.torrentServerSdk.getAllTorrents();
+    this.updateStoredStats(torrents);
+    return torrents.map((torrent) => this.mergeStoredStats(torrent));
   }
 
   public async getStoreStats(): Promise<TorrentStoreStats[]> {
     this.checkServer();
-    const torrents = await this.torrentServerSdk.getAllTorrents();
+    const torrents = await this.getAllTorrents();
     const stats = torrents
       .map(
         (t) =>
@@ -102,10 +114,9 @@ export class TorrentStoreService {
     return stats;
   }
 
-
   public async getDuplicateTorrentCandidates(): Promise<DuplicateTorrentCandidate[]> {
     this.checkServer();
-    const torrents = await this.torrentServerSdk.getAllTorrents();
+    const torrents = await this.getAllTorrents();
     const readyTorrents = torrents.filter(
       (torrent) => torrent.progress >= 0.999 && torrent.ratio >= 1,
     );
@@ -163,6 +174,87 @@ export class TorrentStoreService {
 
   private isMediaFile(fileName: string): boolean {
     return /\.(mkv|mp4|avi|mov|m4v)$/i.test(fileName);
+  }
+
+  private loadStoredStats(): void {
+    if (!existsSync(this.statsFilePath)) {
+      return;
+    }
+    try {
+      const rawStats = JSON.parse(readFileSync(this.statsFilePath, 'utf-8')) as StoredTorrentStats[];
+      this.storedStats = new Map(
+        rawStats.map((stat) => [stat.infoHash.toLowerCase(), stat]),
+      );
+      console.log(`Loaded ${this.storedStats.size} persisted torrent stats.`);
+    } catch (error) {
+      console.error('Failed to load persisted torrent stats:', error);
+    }
+  }
+
+  private saveStoredStats(): void {
+    try {
+      mkdirSync(dirname(this.statsFilePath), { recursive: true });
+      writeFileSync(
+        this.statsFilePath,
+        JSON.stringify([...this.storedStats.values()], null, 2),
+      );
+    } catch (error) {
+      console.error('Failed to save persisted torrent stats:', error);
+    }
+  }
+
+  private startStatsPersistence(): void {
+    if (this.statsInterval) {
+      return;
+    }
+    this.statsInterval = setInterval(async () => {
+      try {
+        const torrents = await this.torrentServerSdk.getAllTorrents();
+        this.updateStoredStats(torrents);
+      } catch (error) {
+        console.error('Failed to refresh persisted torrent stats:', error);
+      }
+    }, 30_000);
+  }
+
+  private updateStoredStats(torrents: TorrentResponse[]): void {
+    let changed = false;
+    const updatedAt = new Date().toISOString();
+
+    for (const torrent of torrents) {
+      const key = torrent.infoHash.toLowerCase();
+      const previous = this.storedStats.get(key);
+      const uploaded = Math.max(previous?.uploaded ?? 0, torrent.uploaded);
+      const ratio = Math.max(previous?.ratio ?? 0, torrent.ratio);
+
+      if (!previous || previous.uploaded !== uploaded || previous.ratio !== ratio) {
+        this.storedStats.set(key, {
+          infoHash: torrent.infoHash,
+          name: torrent.name,
+          size: torrent.size,
+          uploaded,
+          ratio,
+          updatedAt,
+        });
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      this.saveStoredStats();
+    }
+  }
+
+  private mergeStoredStats(torrent: TorrentResponse): TorrentResponse {
+    const storedStats = this.storedStats.get(torrent.infoHash.toLowerCase());
+    if (!storedStats) {
+      return torrent;
+    }
+    return {
+      ...torrent,
+      uploaded: Math.max(torrent.uploaded, storedStats.uploaded),
+      ratio: Math.max(torrent.ratio, storedStats.ratio),
+    };
   }
 
   public getFileStreamingUrl({

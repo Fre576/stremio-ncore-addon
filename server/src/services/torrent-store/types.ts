@@ -28,6 +28,15 @@ export interface TorrentResponse {
   files: TorrentFileResponse[];
 }
 
+export interface StoredTorrentStats {
+  infoHash: InfoHash;
+  name: string;
+  size: number;
+  uploaded: number;
+  ratio: number;
+  updatedAt: string;
+}
+
 export interface AddTorrentRequest {
   path: string;
 }
