@@ -10,6 +10,8 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	bittorrent "github.com/anacrolix/torrent"
 	"github.com/anacrolix/torrent/types/infohash"
@@ -20,6 +22,74 @@ import (
 
 type AddTorrentRequest struct {
 	Path string `json:"path"`
+}
+type PlaybackLimiter struct {
+	mu             sync.Mutex
+	activeInfoHash string
+	activeUntil    time.Time
+}
+
+func (p *PlaybackLimiter) Start(client *bittorrent.Client) {
+	ticker := time.NewTicker(10 * time.Second)
+	go func() {
+		for range ticker.C {
+			p.ApplyPolicy(client)
+		}
+	}()
+}
+
+func (p *PlaybackLimiter) MarkActive(client *bittorrent.Client, infoHash string) {
+	p.mu.Lock()
+	p.activeInfoHash = strings.ToLower(infoHash)
+	p.activeUntil = time.Now().Add(2 * time.Minute)
+	p.mu.Unlock()
+
+	p.ApplyPolicy(client)
+}
+
+func (p *PlaybackLimiter) ApplyPolicy(client *bittorrent.Client) {
+	p.mu.Lock()
+	activeInfoHash := p.activeInfoHash
+	activeUntil := p.activeUntil
+	if activeInfoHash != "" && time.Now().After(activeUntil) {
+		activeInfoHash = ""
+		p.activeInfoHash = ""
+		p.activeUntil = time.Time{}
+	}
+	p.mu.Unlock()
+
+	for _, torrent := range client.Torrents() {
+		if activeInfoHash == "" || torrent.InfoHash().HexString() == activeInfoHash {
+			torrent.AllowDataDownload()
+			torrent.AllowDataUpload()
+			continue
+		}
+
+		torrent.DisallowDataDownload()
+		torrent.DisallowDataUpload()
+	}
+}
+
+func (p *PlaybackLimiter) Status(client *bittorrent.Client) gin.H {
+	p.ApplyPolicy(client)
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	active := p.activeInfoHash != "" && time.Now().Before(p.activeUntil)
+	activeUntil := ""
+	activeTimeoutMs := 0
+	if active {
+		activeUntil = p.activeUntil.Format(time.RFC3339)
+		activeTimeoutMs = int(time.Until(p.activeUntil).Milliseconds())
+	}
+
+	return gin.H{
+		"active":          active,
+		"activeInfoHash":  p.activeInfoHash,
+		"activeUntil":     activeUntil,
+		"activeTimeoutMs": activeTimeoutMs,
+	}
 }
 
 func main() {
@@ -51,13 +121,20 @@ func main() {
 		log.Fatal(err)
 	}
 	defer client.Close()
+	playbackLimiter := &PlaybackLimiter{}
+	playbackLimiter.Start(client)
 
 	r := gin.Default()
 
 	r.GET("/torrents", func(c *gin.Context) {
+		playbackLimiter.ApplyPolicy(client)
 		torrents := client.Torrents()
 		response := responses.TorrentsToResponse(torrents)
 		c.JSON(http.StatusOK, response)
+	})
+
+	r.GET("/playback-limiter", func(c *gin.Context) {
+		c.JSON(http.StatusOK, playbackLimiter.Status(client))
 	})
 
 	r.POST("/torrents", func(c *gin.Context) {
@@ -73,11 +150,13 @@ func main() {
 		}
 		<-torrent.GotInfo()
 		torrent.VerifyData()
+		playbackLimiter.ApplyPolicy(client)
 		response := responses.TorrentToResponse(torrent)
 		c.JSON(http.StatusOK, response)
 	})
 
 	r.GET("/torrents/:infoHash", func(c *gin.Context) {
+		playbackLimiter.ApplyPolicy(client)
 		infoHash := c.Param("infoHash")
 		torrent, ok := client.Torrent(infohash.FromHexString(infoHash))
 		if !ok {
@@ -148,6 +227,8 @@ func main() {
 			c.Header("Accept-Ranges", "bytes")
 			return
 		}
+
+		playbackLimiter.MarkActive(client, infoHash)
 
 		// Get file size
 		fileSize := targetFile.Length()

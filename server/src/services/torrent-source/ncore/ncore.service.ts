@@ -1,7 +1,13 @@
 import cookieParser from 'set-cookie-parser';
 import { JSDOM } from 'jsdom';
-import type { ParsedTorrentDetails, TorrentSource } from '../types';
+import type {
+  ParsedTorrentDetails,
+  TorrentCatalogItem,
+  TorrentCatalogQuery,
+  TorrentSource,
+} from '../types';
 import {
+  NcoreOrderDirection,
   NcoreOrderBy,
   NcoreSearchBy,
   type NcorePageResponseJson,
@@ -10,7 +16,9 @@ import {
 import {
   BATCH_DELAY,
   BATCH_SIZE,
+  MovieCategory,
   MOVIE_CATEGORY_FILTERS,
+  SeriesCategory,
   SERIES_CATEGORY_FILTERS,
 } from './constants';
 import { NcoreTorrentDetails } from './ncore-torrent-details';
@@ -145,6 +153,157 @@ export class NcoreService implements TorrentSource {
       },
     );
     return torrentsWithParsedData;
+  }
+
+  public async getCatalogItems({
+    type,
+    catalogId,
+    search,
+    skip,
+    limit,
+  }: TorrentCatalogQuery): Promise<TorrentCatalogItem[]> {
+    const catalogConfig = this.getCatalogConfig(catalogId, type);
+    if (!catalogConfig) {
+      return [];
+    }
+
+    return this.fetchCatalogItems({
+      queryParams: {
+        mire: search ?? '',
+        miben: NcoreSearchBy.NAME,
+        miszerint: search ? NcoreOrderBy.SEEDERS : NcoreOrderBy.CREATION_TIME,
+        hogyan: NcoreOrderDirection.DESC,
+        kivalasztott_tipus: catalogConfig.categoryFilters,
+      },
+      matchesRelease: catalogConfig.matchesRelease,
+      type,
+      skip,
+      limit,
+    });
+  }
+
+  private async fetchCatalogItems({
+    queryParams,
+    matchesRelease,
+    type,
+    skip,
+    limit,
+  }: {
+    queryParams: NcoreQueryParams;
+    matchesRelease: (releaseName: string) => boolean;
+    type: StreamType;
+    skip: number;
+    limit: number;
+  }): Promise<TorrentCatalogItem[]> {
+    const baseParams = {
+      ...queryParams,
+      tipus: 'kivalasztottak_kozott',
+      jsons: 'true',
+    };
+    const wantedItemCount = skip + limit;
+    const seenImdbIds = new Set<string>();
+    const items: TorrentCatalogItem[] = [];
+
+    let page = 1;
+    let lastPage = 1;
+    const maxPages = 25;
+
+    while (page <= Math.min(lastPage, maxPages) && items.length < wantedItemCount) {
+      const query = new URLSearchParams({ ...baseParams, oldal: `${page}` });
+      const response = await this.fetchTorrents(query);
+
+      if (page === 1) {
+        lastPage = Math.ceil(Number(response.total_results) / Number(response.perpage));
+      }
+
+      for (const torrent of response.results) {
+        if (
+          !this.hasUsefulImdbId(torrent.imdb_id) ||
+          !matchesRelease(torrent.release_name) ||
+          seenImdbIds.has(torrent.imdb_id)
+        ) {
+          continue;
+        }
+
+        seenImdbIds.add(torrent.imdb_id);
+        items.push({
+          imdbId: torrent.imdb_id,
+          type,
+          releaseName: torrent.release_name,
+          fallbackTitle: this.getFallbackTitle(torrent.release_name),
+          seeders: torrent.seeders,
+        });
+
+        if (items.length >= wantedItemCount) {
+          break;
+        }
+      }
+
+      page++;
+    }
+
+    return items.slice(skip, skip + limit);
+  }
+
+  private getCatalogConfig(catalogId: string, type: StreamType) {
+    const containsAny = (patterns: RegExp[]) => (releaseName: string) =>
+      patterns.some((pattern) => pattern.test(releaseName));
+
+    switch (catalogId) {
+      case 'ncore-search-movies':
+        if (type !== StreamType.MOVIE) {
+          return null;
+        }
+        return {
+          categoryFilters: MOVIE_CATEGORY_FILTERS,
+          matchesRelease: () => true,
+        };
+      case 'ncore-search-series':
+        if (type !== StreamType.TV_SHOW) {
+          return null;
+        }
+        return {
+          categoryFilters: SERIES_CATEGORY_FILTERS,
+          matchesRelease: () => true,
+        };
+      case 'ncore-recent-hu-4k':
+        if (type !== StreamType.MOVIE) {
+          return null;
+        }
+        return {
+          categoryFilters: MovieCategory.HD_HUN,
+          matchesRelease: containsAny([/\b2160p\b/i, /\buhd\b/i, /\b4k\b/i]),
+        };
+      case 'ncore-recent-hu-1080p':
+        if (type !== StreamType.MOVIE) {
+          return null;
+        }
+        return {
+          categoryFilters: MovieCategory.HD_HUN,
+          matchesRelease: containsAny([/\b1080p\b/i, /\b1080i\b/i]),
+        };
+      case 'ncore-recent-hu-series':
+        if (type !== StreamType.TV_SHOW) {
+          return null;
+        }
+        return {
+          categoryFilters: SeriesCategory.HD_HUN,
+          matchesRelease: () => true,
+        };
+      default:
+        return null;
+    }
+  }
+
+  private hasUsefulImdbId(imdbId: string): boolean {
+    return /^tt\d+$/.test(imdbId);
+  }
+
+  private getFallbackTitle(releaseName: string): string {
+    return releaseName
+      .replace(/\./g, ' ')
+      .replace(/\b(19|20)\d{2}\b.*$/, '')
+      .trim();
   }
 
   private filterTorrentsBySeasonAndEpisode(

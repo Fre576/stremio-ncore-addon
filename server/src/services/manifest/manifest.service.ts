@@ -2,6 +2,7 @@ import { CustomManifest } from './types';
 import { ConfigService } from '../config';
 import { DeviceTokenService } from '../device-token';
 import { UserService } from '../user';
+import { CATALOG_DEFINITIONS } from '@/services/catalog';
 
 export class ManifestService {
   constructor(
@@ -20,11 +21,14 @@ export class ManifestService {
         configurationRequired: true,
       },
       baseUrl: config.addonUrl,
-      version: '0.8.0',
+      version: '0.8.1',
       name: 'nCore',
       description: 'Provides streams from a personal nCore account.',
-      catalogs: [],
-      resources: ['stream'],
+      catalogs: CATALOG_DEFINITIONS.map((catalog) => ({
+        ...catalog,
+        extra: catalog.extra.map((extra) => ({ ...extra })),
+      })),
+      resources: ['catalog', 'meta', 'stream'],
       types: ['movie', 'series'],
       idPrefixes: ['tt'],
       logo: `${config.addonUrl}/stremio-ncore-addon-logo-rounded.png`,

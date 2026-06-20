@@ -16,7 +16,7 @@ COPY ./client/package.json ./client/package.json
 
 
 FROM node-base AS build-base
-RUN npm install -g pnpm
+RUN npm install -g pnpm@9.12.2
 
 FROM build-base AS prod-deps
 RUN pnpm install --prod

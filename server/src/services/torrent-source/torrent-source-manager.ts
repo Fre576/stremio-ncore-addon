@@ -1,5 +1,11 @@
 import { isNotNull } from '@/utils/type-guards';
-import type { TorrentDetails, TorrentSource, TorrentSourceIssue } from './types';
+import type {
+  TorrentCatalogItem,
+  TorrentCatalogQuery,
+  TorrentDetails,
+  TorrentSource,
+  TorrentSourceIssue,
+} from './types';
 import type { StreamQuery } from '@/schemas/stream.schema';
 
 async function awaitAllReachablePromises<T>(promises: Promise<T>[]): Promise<T[]> {
@@ -48,6 +54,16 @@ export class TorrentSourceManager {
   ): Promise<TorrentDetails[]> {
     const promises = this.sources.map(async (source) =>
       source.getTorrentsForImdbId(params),
+    );
+    const results = (await awaitAllReachablePromises(promises)).flat();
+    return results;
+  }
+
+  public async getCatalogItems(
+    params: TorrentCatalogQuery,
+  ): Promise<TorrentCatalogItem[]> {
+    const promises = this.sources.map(async (source) =>
+      source.getCatalogItems ? source.getCatalogItems(params) : [],
     );
     const results = (await awaitAllReachablePromises(promises)).flat();
     return results;

@@ -10,8 +10,10 @@ import { ManifestService } from '@/services/manifest';
 import { TorrentStoreService } from '@/services/torrent-store';
 import { TorrentService } from '@/services/torrent';
 import { StreamService } from '@/services/stream';
+import { CatalogService } from '@/services/catalog';
 
 import { ManifestController } from '@/controllers/manifest.controller';
+import { CatalogController } from '@/controllers/catalog.controller';
 import { AuthController } from '@/controllers/auth.controller';
 import { StreamController } from '@/controllers/stream.controller';
 import { TorrentController } from '@/controllers/torrent.controller';
@@ -81,10 +83,12 @@ const isDeviceAuthenticated = createDeviceTokenMiddleware(userService);
 const torrentStoreService = new TorrentStoreService(torrentSource);
 await torrentStoreService.startServer();
 const streamService = new StreamService(configService, userService);
+const catalogService = new CatalogService(torrentSource, cinemetaService);
 configService.torrentStoreService = torrentStoreService;
 
 const configController = new ConfigController(configService, torrentSource);
 const manifestController = new ManifestController(manifestService);
+const catalogController = new CatalogController(catalogService);
 const authController = new AuthController(userService, sessionService);
 const deviceTokenController = new DeviceTokenController(deviceTokenService);
 const userController = new UserController(userService);
@@ -122,6 +126,15 @@ const app = new Hono<HonoEnv>()
   })
   .get('/auth/:deviceToken/manifest.json', isDeviceAuthenticated, (c) =>
     manifestController.getAuthenticatedManifest(c),
+  )
+  .get('/auth/:deviceToken/catalog/:type/:catalogId', isDeviceAuthenticated, (c) =>
+    catalogController.getCatalog(c),
+  )
+  .get('/auth/:deviceToken/catalog/:type/:catalogId/:extra', isDeviceAuthenticated, (c) =>
+    catalogController.getCatalog(c),
+  )
+  .get('/auth/:deviceToken/meta/:type/:imdbId', isDeviceAuthenticated, (c) =>
+    catalogController.getMeta(c),
   )
 
   .get('/config/is-configured', (c) => configController.getIsConfigured(c))
