@@ -6,6 +6,8 @@ export interface TorrentStoreStats {
   progress: string;
   size: string;
   downloaded: string;
+  uploaded: string;
+  ratio: string;
 }
 
 export interface TorrentFileResponse {
@@ -21,9 +23,17 @@ export interface TorrentResponse {
   progress: number;
   size: number;
   downloaded: number;
+  uploaded: number;
+  ratio: number;
   files: TorrentFileResponse[];
 }
 
 export interface AddTorrentRequest {
   path: string;
+}
+
+export interface DuplicateTorrentCandidate {
+  duplicateKey: string;
+  keep: TorrentResponse;
+  deletable: TorrentResponse[];
 }

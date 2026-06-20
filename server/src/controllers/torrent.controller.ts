@@ -10,6 +10,11 @@ export class TorrentController {
     return c.json(stats);
   }
 
+  public async getDuplicateTorrentCandidates(c: Context) {
+    const candidates = await this.torrentStoreService.getDuplicateTorrentCandidates();
+    return c.json(candidates);
+  }
+
   public async deleteTorrent(c: Context) {
     const { infoHash } = c.req.param();
     if (!infoHash) {

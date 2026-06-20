@@ -194,6 +194,9 @@ const app = new Hono<HonoEnv>()
   )
 
   .get('/torrents', isAdmin, (c) => torrentController.getTorrentStats(c))
+  .get('/torrents/duplicates', isAdmin, (c) =>
+    torrentController.getDuplicateTorrentCandidates(c),
+  )
   .delete('/torrents/:infoHash', isAdmin, (c) => torrentController.deleteTorrent(c));
 
 baseApp.route('/api', app);

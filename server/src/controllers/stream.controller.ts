@@ -38,11 +38,14 @@ export class StreamController {
       episode,
     });
 
+    const storedTorrents = await this.torrentStoreService.getAllTorrents();
+
     const orderedTorrents = await this.streamService.orderTorrents({
       torrents,
       season,
       episode,
       user,
+      storedTorrents,
     });
 
     const { preferredLanguage } = user;
@@ -55,6 +58,7 @@ export class StreamController {
         season,
         episode,
         preferredLanguage,
+        storedTorrents,
       }),
     );
 
