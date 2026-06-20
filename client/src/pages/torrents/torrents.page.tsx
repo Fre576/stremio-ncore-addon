@@ -16,7 +16,7 @@ import { useQuery } from '@tanstack/react-query';
 import { PropsWithChildren } from 'react';
 import { Redirect } from 'wouter';
 import { DeleteTorrentButton } from './components/delete-torrent-button';
-import { TORRENTS_QUERY_KEY } from './constants';
+import { DUPLICATE_TORRENTS_QUERY_KEY, TORRENTS_QUERY_KEY } from './constants';
 import { UserRole } from '@server/db/schema/users';
 
 const Container = ({ children }: PropsWithChildren) => (
@@ -41,6 +41,16 @@ export const TorrentsPage = () => {
     },
     enabled: !!user && user.role === UserRole.ADMIN,
     refetchInterval: 10_000,
+  });
+
+  const { data: duplicateCandidates } = useQuery({
+    queryKey: [DUPLICATE_TORRENTS_QUERY_KEY],
+    queryFn: async () => {
+      const req = await fetch('/api/torrents/duplicates');
+      return await req.json();
+    },
+    enabled: !!user && user.role === UserRole.ADMIN,
+    refetchInterval: 30_000,
   });
 
   const [animatedParent] = useAutoAnimate();
@@ -71,6 +81,63 @@ export const TorrentsPage = () => {
 
   return (
     <Container>
+      {!!duplicateCandidates?.length && (
+        <div className="overflow-x-auto md:overflow-x-visible w-full">
+          <Table className="w-full">
+            <TableCaption>
+              Duplicate candidates. Only completed torrents with ratio 1.00 or higher are
+              listed here.
+            </TableCaption>
+            <TableHeader>
+              <TableRow className="text-nowrap">
+                <TableHead>Matched title</TableHead>
+                <TableHead>Keep</TableHead>
+                <TableHead>Can delete</TableHead>
+                <TableHead>Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {duplicateCandidates.flatMap((candidate: any) =>
+                candidate.deletable.map((torrent: any) => (
+                  <TableRow key={`${candidate.duplicateKey}-${torrent.infoHash}`}>
+                    <TableCell>
+                      <span className="break-all line-clamp-3 overflow-hidden overflow-ellipsis">
+                        {candidate.duplicateKey}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <span className="break-all line-clamp-3 overflow-hidden overflow-ellipsis">
+                        {candidate.keep.name}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <span className="break-all line-clamp-3 overflow-hidden overflow-ellipsis">
+                        {torrent.name}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      {user?.role === UserRole.ADMIN && (
+                        <DeleteTorrentButton
+                          torrent={{
+                            hash: torrent.infoHash,
+                            name: torrent.name,
+                            downloaded: `${(torrent.progress * 100).toFixed(2)}%`,
+                            uploaded: `${torrent.ratio.toFixed(2)} ratio`,
+                            ratio: torrent.ratio.toFixed(2),
+                            progress: `${(torrent.progress * 100).toFixed(2)}%`,
+                            size: `${(torrent.size / 1024 / 1024 / 1024).toFixed(2)} GB`,
+                          }}
+                        />
+                      )}
+                    </TableCell>
+                  </TableRow>
+                )),
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
       <div className="overflow-x-auto md:overflow-x-visible w-full">
         <Table className="w-full">
           <TableCaption>Your currently active torrents</TableCaption>
@@ -80,6 +147,8 @@ export const TorrentsPage = () => {
                 <span>Release name</span>
               </TableHead>
               <TableHead>Downloaded</TableHead>
+              <TableHead>Uploaded</TableHead>
+              <TableHead>Ratio</TableHead>
               <TableHead>Total size</TableHead>
               <TableHead>Progress</TableHead>
               <TableHead>Actions</TableHead>
@@ -94,6 +163,8 @@ export const TorrentsPage = () => {
                   </span>
                 </TableCell>
                 <TableCell>{torrent.downloaded}</TableCell>
+                <TableCell>{torrent.uploaded}</TableCell>
+                <TableCell>{torrent.ratio}</TableCell>
                 <TableCell>{torrent.size}</TableCell>
                 <TableCell>{torrent.progress}</TableCell>
                 <TableCell>
