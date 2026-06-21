@@ -174,6 +174,7 @@ export class StreamService {
         const resolution = torrent.getResolution(torrent.files[fileIndex]!.name);
         return preferredResolutions.includes(resolution) ? 2 : 0;
       },
+      (torrent) => Math.min(torrent.getSeeders(), 999) / 1000,
     ]);
   }
 
