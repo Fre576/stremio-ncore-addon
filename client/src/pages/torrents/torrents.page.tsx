@@ -20,6 +20,7 @@ import {
   DISK_SPACE_QUERY_KEY,
   DUPLICATE_TORRENTS_QUERY_KEY,
   TORRENTS_QUERY_KEY,
+  UPLOAD_HEALTH_QUERY_KEY,
 } from './constants';
 import { UserRole } from '@server/db/schema/users';
 
@@ -79,6 +80,16 @@ export const TorrentsPage = () => {
     refetchInterval: 30_000,
   });
 
+  const { data: uploadHealth } = useQuery({
+    queryKey: [UPLOAD_HEALTH_QUERY_KEY],
+    queryFn: async () => {
+      const req = await fetch('/api/torrents/upload-health');
+      return await req.json();
+    },
+    enabled: !!user && user.role === UserRole.ADMIN,
+    refetchInterval: 30_000,
+  });
+
   const [animatedParent] = useAutoAnimate();
 
   if (user && user.role !== UserRole.ADMIN) {
@@ -107,6 +118,18 @@ export const TorrentsPage = () => {
 
   return (
     <Container>
+      {uploadHealth && (
+        <Alert
+          variant={uploadHealth.status === 'ok' ? 'success' : 'default'}
+          title={
+            uploadHealth.status === 'ok'
+              ? `Feltöltés működik: ${uploadHealth.uploadedTotalFormatted}`
+              : `Feltöltés figyelő: ${uploadHealth.uploadedTotalFormatted} feltöltve`
+          }
+          description={`Peer port: ${uploadHealth.peerPort} TCP/UDP. Kész torrentek: ${uploadHealth.completedCount}, részleges: ${uploadHealth.partialCount}. Átlag ratio: ${uploadHealth.averageRatio.toFixed(2)}. ${uploadHealth.message}`}
+        />
+      )}
+
       {diskSpace && (
         <div className="space-y-4">
           <Alert

@@ -14,6 +14,10 @@ export class TorrentController {
     const diskSpaceInfo = await this.torrentStoreService.getDiskSpaceInfo();
     return c.json(diskSpaceInfo);
   }
+  public async getUploadHealthInfo(c: Context) {
+    const uploadHealthInfo = await this.torrentStoreService.getUploadHealthInfo();
+    return c.json(uploadHealthInfo);
+  }
   public async getDuplicateTorrentCandidates(c: Context) {
     const candidates = await this.torrentStoreService.getDuplicateTorrentCandidates();
     return c.json(candidates);

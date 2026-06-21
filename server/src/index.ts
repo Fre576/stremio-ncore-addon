@@ -195,6 +195,9 @@ const app = new Hono<HonoEnv>()
 
   .get('/torrents', isAdmin, (c) => torrentController.getTorrentStats(c))
   .get('/torrents/disk-space', isAdmin, (c) => torrentController.getDiskSpaceInfo(c))
+  .get('/torrents/upload-health', isAdmin, (c) =>
+    torrentController.getUploadHealthInfo(c),
+  )
   .get('/torrents/duplicates', isAdmin, (c) =>
     torrentController.getDuplicateTorrentCandidates(c),
   )

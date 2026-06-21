@@ -8,6 +8,7 @@ import {
   TorrentFileResponse,
   TorrentResponse,
   TorrentStoreStats,
+  UploadHealthInfo,
 } from './types';
 import { env } from '@/env';
 import { dirname, resolve } from 'node:path';
@@ -166,6 +167,42 @@ export class TorrentStoreService {
       deletableCandidates,
     };
   }
+  public async getUploadHealthInfo(): Promise<UploadHealthInfo> {
+    this.checkServer();
+    const torrents = await this.getAllTorrents();
+    const completed = torrents.filter((torrent) => torrent.progress >= 0.999);
+    const uploadedTotal = torrents.reduce((sum, torrent) => sum + torrent.uploaded, 0);
+    const downloadedTotal = torrents.reduce((sum, torrent) => sum + torrent.downloaded, 0);
+    const averageRatio = downloadedTotal > 0 ? uploadedTotal / downloadedTotal : 0;
+    const hasUploaded = uploadedTotal > 0;
+
+    let status: UploadHealthInfo['status'] = 'ok';
+    let message = 'Feltöltés rendben: már látszik feltöltött adat.';
+
+    if (!completed.length) {
+      status = 'no-completed-torrents';
+      message = 'Még nincs 100%-os torrent, ezért kevésbé valószínű a feltöltés.';
+    } else if (!hasUploaded) {
+      status = 'waiting-for-peers';
+      message =
+        'A feltöltés engedélyezett, de még nincs látható feltöltött adat. Ez gyakran azt jelenti, hogy nincs peer, aki tőled kér adatot.';
+    }
+
+    return {
+      peerPort: 42069,
+      seedingEnabled: true,
+      torrentCount: torrents.length,
+      completedCount: completed.length,
+      partialCount: torrents.length - completed.length,
+      uploadedTotal,
+      uploadedTotalFormatted: formatBytes(uploadedTotal),
+      averageRatio,
+      hasUploaded,
+      status,
+      message,
+    };
+  }
+
   public async getDuplicateTorrentCandidates(): Promise<DuplicateTorrentCandidate[]> {
     this.checkServer();
     const torrents = await this.getAllTorrents();

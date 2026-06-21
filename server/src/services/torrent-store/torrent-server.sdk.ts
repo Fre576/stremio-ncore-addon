@@ -62,6 +62,22 @@ export class TorrentServerSdk {
     }
   }
 
+  public async getPlaybackLimiterStatus(): Promise<{
+    active: boolean;
+    activeInfoHash: string;
+    activeUntil: string;
+    activeTimeoutMs: number;
+  }> {
+    const req = await fetch(`${this.url}/playback-limiter`);
+    if (!req.ok) {
+      const responseText = await req.text();
+      throw Error(
+        `Could not get playback limiter status. Status code: ${req.status}. Error: ${responseText}`,
+      );
+    }
+    return await req.json();
+  }
+
   public async deleteTorrent(infoHash: InfoHash): Promise<void> {
     const req = await fetch(`${this.url}/torrents/${infoHash}`, { method: 'DELETE' });
     if (!req.ok) {

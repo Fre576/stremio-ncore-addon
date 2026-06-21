@@ -70,3 +70,17 @@ export interface DiskSpaceInfo {
   isLow: boolean;
   deletableCandidates: DeletableTorrentCandidate[];
 }
+
+export interface UploadHealthInfo {
+  peerPort: number;
+  seedingEnabled: boolean;
+  torrentCount: number;
+  completedCount: number;
+  partialCount: number;
+  uploadedTotal: number;
+  uploadedTotalFormatted: string;
+  averageRatio: number;
+  hasUploaded: boolean;
+  status: 'ok' | 'waiting-for-peers' | 'no-completed-torrents';
+  message: string;
+}

@@ -8,7 +8,7 @@ import { formatBytes } from '@/utils/bytes';
 import { ConfigService } from '../config';
 import { UserService } from '../user';
 import { User } from '@/types/user';
-import { Language } from '@/db/schema/users';
+import { Language, Resolution } from '@/db/schema/users';
 
 export class StreamService {
   constructor(
@@ -111,10 +111,18 @@ export class StreamService {
       storedTorrents,
       preferredLanguage,
     });
-    const typeLine = `${languageEmoji} | ${torrent.displayResolution(torrent.getResolution(file.name))} | ${fileSizeString}\n`;
+    const resolution = torrent.getResolution(file.name);
+    const typeLine = `${languageEmoji} | ${torrent.displayResolution(resolution)} | ${fileSizeString}\n`;
     const title = isShow ? `${file.name}\n` : `${torrent.getName()}\n`;
-    const seeders = `⬆️ ${torrent.getSeeders()}\n`;
-    return downloadStatusLine + warningLine + recommendedLine + typeLine + title + seeders;
+    const healthLine = this.getStreamHealthLine({
+      torrent,
+      resolution,
+      fileSize: file.length,
+      preferredLanguage,
+    });
+    return (
+      downloadStatusLine + warningLine + recommendedLine + typeLine + healthLine + title
+    );
   }
 
   private getDownloadStatusLine({
@@ -142,13 +150,69 @@ export class StreamService {
     if (progress >= 0.999) {
       const ratioText = storedTorrent.ratio > 0 ? ` | ratio ${storedTorrent.ratio.toFixed(2)}` : '';
       return preferredLanguage === Language.HU
-        ? `✅ MEGVAN${ratioText}\n`
-        : `✅ Downloaded${ratioText}\n`;
+        ? `✅ HDD-RŐL INDUL${ratioText}\n`
+        : `✅ Starts from HDD${ratioText}\n`;
     }
 
     return preferredLanguage === Language.HU
-      ? `⬇️ ${percent.toFixed(1)}% LETÖLTVE\n`
-      : `⬇️ ${percent.toFixed(1)}% downloaded\n`;
+      ? `⬇️ ${percent.toFixed(1)}% MEGVAN A HDD-N\n`
+      : `⬇️ ${percent.toFixed(1)}% already on HDD\n`;
+  }
+
+  private getStreamHealthLine({
+    torrent,
+    resolution,
+    fileSize,
+    preferredLanguage,
+  }: {
+    torrent: TorrentDetails;
+    resolution: Resolution;
+    fileSize: number;
+    preferredLanguage: Language;
+  }): string {
+    const seeders = torrent.getSeeders();
+    const seedText =
+      preferredLanguage === Language.HU
+        ? this.getHungarianSeedText(seeders)
+        : this.getEnglishSeedText(seeders);
+
+    const warnings: string[] = [];
+    const isLarge4k = resolution === Resolution.R2160P && fileSize >= 45 * 1024 * 1024 * 1024;
+    if (resolution === Resolution.R2160P && seeders < 3) {
+      warnings.push(preferredLanguage === Language.HU ? '4K kevés seeddel' : '4K with few seeds');
+    }
+    if (isLarge4k) {
+      warnings.push(preferredLanguage === Language.HU ? 'nagy 4K fájl' : 'large 4K file');
+    }
+
+    const warningText = warnings.length ? ` | ⚠️ ${warnings.join(', ')}` : '';
+    return `${seedText}${warningText}\n`;
+  }
+
+  private getHungarianSeedText(seeders: number): string {
+    if (seeders >= 20) {
+      return `🌱 sok seed: ${seeders}`;
+    }
+    if (seeders >= 5) {
+      return `🌱 jó seed: ${seeders}`;
+    }
+    if (seeders > 0) {
+      return `⚠️ kevés seed: ${seeders}`;
+    }
+    return '⚠️ nincs látható seed';
+  }
+
+  private getEnglishSeedText(seeders: number): string {
+    if (seeders >= 20) {
+      return `🌱 many seeds: ${seeders}`;
+    }
+    if (seeders >= 5) {
+      return `🌱 good seeds: ${seeders}`;
+    }
+    if (seeders > 0) {
+      return `⚠️ few seeds: ${seeders}`;
+    }
+    return '⚠️ no visible seeds';
   }
 
   public async orderTorrents({
@@ -176,12 +240,58 @@ export class StreamService {
           return 0;
         }
         const resolution = torrent.getResolution(file.name);
-        return preferredResolutions.includes(resolution) ? 2 : 0;
+        const preferredScore = preferredResolutions.includes(resolution) ? 2 : 0;
+        return preferredScore + this.getResolutionHealthScore(torrent, resolution, file.length);
       },
       (torrent) =>
         this.getSeriesContinuityScore(torrent, { season, episode }, storedTorrents),
-      (torrent) => Math.min(torrent.getSeeders(), 999) / 1000,
+      (torrent) => this.getSeederScore(torrent),
     ]);
+  }
+
+  private getSeederScore(torrent: TorrentDetails): number {
+    const seeders = torrent.getSeeders();
+    if (seeders >= 50) {
+      return 1.5;
+    }
+    if (seeders >= 20) {
+      return 1.2;
+    }
+    if (seeders >= 5) {
+      return 0.8;
+    }
+    if (seeders > 0) {
+      return 0.25;
+    }
+    return -1;
+  }
+
+  private getResolutionHealthScore(
+    torrent: TorrentDetails,
+    resolution: Resolution,
+    fileSize: number,
+  ): number {
+    if (resolution !== Resolution.R2160P) {
+      return 0;
+    }
+
+    const seeders = torrent.getSeeders();
+    let score = 0.75;
+    if (seeders < 3) {
+      score -= 2.5;
+    } else if (seeders < 8) {
+      score -= 0.75;
+    } else if (seeders >= 20) {
+      score += 0.75;
+    }
+
+    if (fileSize >= 70 * 1024 * 1024 * 1024) {
+      score -= 1.25;
+    } else if (fileSize >= 45 * 1024 * 1024 * 1024) {
+      score -= 0.5;
+    }
+
+    return score;
   }
 
   private getSeriesContinuityScore(
