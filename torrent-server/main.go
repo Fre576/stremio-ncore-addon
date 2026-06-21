@@ -42,7 +42,7 @@ func (p *PlaybackLimiter) Start(client *bittorrent.Client) {
 func (p *PlaybackLimiter) MarkActive(client *bittorrent.Client, infoHash string) {
 	p.mu.Lock()
 	p.activeInfoHash = strings.ToLower(infoHash)
-	p.activeUntil = time.Now().Add(30 * time.Minute)
+	p.activeUntil = time.Now().Add(4 * time.Hour)
 	p.mu.Unlock()
 
 	p.ApplyPolicy(client)
