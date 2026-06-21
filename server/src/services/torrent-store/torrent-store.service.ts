@@ -71,9 +71,12 @@ export class TorrentStoreService {
     }
   }
 
-  public async addTorrent(torrentFilePath: string): Promise<TorrentResponse> {
+  public async addTorrent(
+    torrentFilePath: string,
+    { verify = true }: { verify?: boolean } = {},
+  ): Promise<TorrentResponse> {
     this.checkServer();
-    const torrent = await this.torrentServerSdk.addTorrent(torrentFilePath);
+    const torrent = await this.torrentServerSdk.addTorrent(torrentFilePath, { verify });
     return this.mergeStoredStats(torrent);
   }
 
@@ -363,10 +366,10 @@ export class TorrentStoreService {
     console.log(`Found ${savedTorrentFilePaths.length} torrent files.`);
     await Promise.allSettled(
       savedTorrentFilePaths.map((filePath) => {
-        return this.addTorrent(filePath);
+        return this.addTorrent(filePath, { verify: false });
       }),
     );
-    console.log('Torrent files loaded and verified.');
+    console.log('Torrent files loaded. Skipped full startup verification for existing torrents.');
   }
 
   public deleteUnnecessaryTorrents = async () => {

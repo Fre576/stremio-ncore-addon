@@ -21,7 +21,8 @@ import (
 )
 
 type AddTorrentRequest struct {
-	Path string `json:"path"`
+	Path   string `json:"path"`
+	Verify *bool  `json:"verify"`
 }
 type PlaybackLimiter struct {
 	mu             sync.Mutex
@@ -160,7 +161,9 @@ func main() {
 			return
 		}
 		<-torrent.GotInfo()
-		torrent.VerifyData()
+		if json.Verify == nil || *json.Verify {
+			torrent.VerifyData()
+		}
 		playbackLimiter.ApplyPolicy(client)
 		response := responses.TorrentToResponse(torrent)
 		c.JSON(http.StatusOK, response)

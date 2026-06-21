@@ -31,13 +31,16 @@ export class TorrentServerSdk {
     return (await req.json()) as TorrentResponse[];
   }
 
-  public async addTorrent(torrentFilePath: string): Promise<TorrentResponse> {
+  public async addTorrent(
+    torrentFilePath: string,
+    { verify = true }: { verify?: boolean } = {},
+  ): Promise<TorrentResponse> {
     const req = await fetch(`${this.url}/torrents`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ path: torrentFilePath } satisfies AddTorrentRequest),
+      body: JSON.stringify({ path: torrentFilePath, verify } satisfies AddTorrentRequest),
     });
     if (!req.ok) {
       const responseText = await req.text();

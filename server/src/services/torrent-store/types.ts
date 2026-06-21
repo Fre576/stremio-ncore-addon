@@ -39,6 +39,7 @@ export interface StoredTorrentStats {
 
 export interface AddTorrentRequest {
   path: string;
+  verify?: boolean;
 }
 
 export interface DuplicateTorrentCandidate {
