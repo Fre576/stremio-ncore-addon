@@ -1,6 +1,8 @@
 import { ChildProcessWithoutNullStreams, spawn } from 'node:child_process';
 import { TorrentSourceManager } from '../torrent-source';
 import {
+  DeletableTorrentCandidate,
+  DiskSpaceInfo,
   DuplicateTorrentCandidate,
   StoredTorrentStats,
   TorrentFileResponse,
@@ -13,7 +15,7 @@ import { formatBytes } from '@/utils/bytes';
 import { globSync } from 'glob';
 import { TorrentServerSdk } from './torrent-server.sdk';
 import { sleep } from '@/utils/sleep';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statfsSync, writeFileSync } from 'node:fs';
 
 export class TorrentStoreService {
   private torrentServerUrl: string = `http://localhost:${env.TORRENT_SERVER_PORT}`;
@@ -119,6 +121,51 @@ export class TorrentStoreService {
     return stats;
   }
 
+  public async getDiskSpaceInfo(): Promise<DiskSpaceInfo> {
+    this.checkServer();
+    const stats = statfsSync(env.ADDON_DIR);
+    const free = stats.bavail * stats.bsize;
+    const total = stats.blocks * stats.bsize;
+    const used = total - free;
+    const warningThreshold = 200 * 1024 * 1024 * 1024;
+    const torrents = await this.getAllTorrents();
+    const deletableCandidates = torrents
+      .filter((torrent) => torrent.progress >= 0.999 && torrent.ratio >= 1)
+      .sort((a: TorrentResponse, z: TorrentResponse) => {
+        const ratioDiff = z.ratio - a.ratio;
+        if (ratioDiff !== 0) {
+          return ratioDiff;
+        }
+        return z.size - a.size;
+      })
+      .slice(0, 8)
+      .map(
+        (torrent): DeletableTorrentCandidate => ({
+          infoHash: torrent.infoHash,
+          name: torrent.name,
+          size: torrent.size,
+          downloaded: torrent.downloaded,
+          uploaded: torrent.uploaded,
+          ratio: torrent.ratio,
+          progress: torrent.progress,
+          reason: '100% downloaded and ratio is at least 1.00',
+        }),
+      );
+
+    return {
+      path: env.ADDON_DIR,
+      free,
+      total,
+      used,
+      freeFormatted: formatBytes(free),
+      totalFormatted: formatBytes(total),
+      usedFormatted: formatBytes(used),
+      warningThreshold,
+      warningThresholdFormatted: formatBytes(warningThreshold),
+      isLow: free < warningThreshold,
+      deletableCandidates,
+    };
+  }
   public async getDuplicateTorrentCandidates(): Promise<DuplicateTorrentCandidate[]> {
     this.checkServer();
     const torrents = await this.getAllTorrents();

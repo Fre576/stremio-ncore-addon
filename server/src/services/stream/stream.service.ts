@@ -1,7 +1,7 @@
 import type { Stream } from 'stremio-addon-sdk';
 import type { TorrentDetails } from '../torrent-source';
 import type { TorrentFileDetails } from '../torrent-source/types';
-import type { TorrentResponse } from '../torrent-store/types';
+import type { TorrentFileResponse, TorrentResponse } from '../torrent-store/types';
 import { languageEmojiMap } from './constants';
 import { rateList } from '@/utils/rate-list';
 import { formatBytes } from '@/utils/bytes';
@@ -171,13 +171,90 @@ export class StreamService {
       (torrent) => (preferredLanguage === torrent.getLanguage() ? 3 : 0),
       (torrent) => {
         const fileIndex = torrent.getMediaFileIndex({ season, episode });
-        const resolution = torrent.getResolution(torrent.files[fileIndex]!.name);
+        const file = torrent.files[fileIndex];
+        if (!file) {
+          return 0;
+        }
+        const resolution = torrent.getResolution(file.name);
         return preferredResolutions.includes(resolution) ? 2 : 0;
       },
+      (torrent) =>
+        this.getSeriesContinuityScore(torrent, { season, episode }, storedTorrents),
       (torrent) => Math.min(torrent.getSeeders(), 999) / 1000,
     ]);
   }
 
+  private getSeriesContinuityScore(
+    torrent: TorrentDetails,
+    { season, episode }: { season: number | undefined; episode: number | undefined },
+    storedTorrents: TorrentResponse[],
+  ): number {
+    if (!season || !episode) {
+      return 0;
+    }
+
+    const fileIndex = torrent.getMediaFileIndex({ season, episode });
+    const candidateFile = torrent.files[fileIndex];
+    if (!candidateFile) {
+      return 0;
+    }
+
+    const candidateKey = this.getSeriesSeasonKey(candidateFile.name, season);
+    if (!candidateKey) {
+      return 0;
+    }
+
+    const candidateReleaseGroup = this.getReleaseGroup(torrent.getName());
+    let hasSameSeason = false;
+    let hasSameReleaseGroup = false;
+
+    for (const storedTorrent of storedTorrents) {
+      const storedMediaFiles = storedTorrent.files.filter((file) =>
+        this.isStoredMediaFile(file),
+      );
+      for (const storedFile of storedMediaFiles) {
+        if (storedFile.progress <= 0.01) {
+          continue;
+        }
+        if (this.getSeriesSeasonKey(storedFile.name, season) !== candidateKey) {
+          continue;
+        }
+        hasSameSeason = true;
+        if (
+          candidateReleaseGroup &&
+          this.getReleaseGroup(storedTorrent.name) === candidateReleaseGroup
+        ) {
+          hasSameReleaseGroup = true;
+        }
+      }
+    }
+
+    return (hasSameSeason ? 1.25 : 0) + (hasSameReleaseGroup ? 0.75 : 0);
+  }
+
+  private getSeriesSeasonKey(fileName: string, season: number): string | null {
+    const normalized = fileName
+      .toLowerCase()
+      .replace(/\.[a-z0-9]{2,4}$/i, '')
+      .replace(/[._-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const seasonToken = `s${season.toString().padStart(2, '0')}`;
+    const seasonIndex = normalized.indexOf(seasonToken);
+    if (seasonIndex <= 0) {
+      return null;
+    }
+    return `${normalized.slice(0, seasonIndex).trim()}|${seasonToken}`;
+  }
+
+  private getReleaseGroup(releaseName: string): string {
+    const match = releaseName.match(/-([a-z0-9]+)$/i);
+    return match?.[1]?.toLowerCase() ?? '';
+  }
+
+  private isStoredMediaFile(file: TorrentFileResponse): boolean {
+    return /\.(mkv|mp4|avi|mov|m4v)$/i.test(file.name);
+  }
   private getStoredTorrentScore(
     torrent: TorrentDetails,
     storedTorrents: TorrentResponse[],

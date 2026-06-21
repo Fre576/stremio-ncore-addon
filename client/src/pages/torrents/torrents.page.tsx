@@ -16,7 +16,11 @@ import { useQuery } from '@tanstack/react-query';
 import { PropsWithChildren } from 'react';
 import { Redirect } from 'wouter';
 import { DeleteTorrentButton } from './components/delete-torrent-button';
-import { DUPLICATE_TORRENTS_QUERY_KEY, TORRENTS_QUERY_KEY } from './constants';
+import {
+  DISK_SPACE_QUERY_KEY,
+  DUPLICATE_TORRENTS_QUERY_KEY,
+  TORRENTS_QUERY_KEY,
+} from './constants';
 import { UserRole } from '@server/db/schema/users';
 
 const Container = ({ children }: PropsWithChildren) => (
@@ -25,6 +29,18 @@ const Container = ({ children }: PropsWithChildren) => (
     {children}
   </div>
 );
+
+const bytesToGiB = (bytes: number) => `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
+
+const toDeleteButtonTorrent = (torrent: any) => ({
+  hash: torrent.infoHash,
+  name: torrent.name,
+  downloaded: `${(torrent.progress * 100).toFixed(2)}%`,
+  uploaded: `${torrent.ratio.toFixed(2)} ratio`,
+  ratio: torrent.ratio.toFixed(2),
+  progress: `${(torrent.progress * 100).toFixed(2)}%`,
+  size: bytesToGiB(torrent.size),
+});
 
 export const TorrentsPage = () => {
   const { data: user } = useMe();
@@ -47,6 +63,16 @@ export const TorrentsPage = () => {
     queryKey: [DUPLICATE_TORRENTS_QUERY_KEY],
     queryFn: async () => {
       const req = await fetch('/api/torrents/duplicates');
+      return await req.json();
+    },
+    enabled: !!user && user.role === UserRole.ADMIN,
+    refetchInterval: 30_000,
+  });
+
+  const { data: diskSpace } = useQuery({
+    queryKey: [DISK_SPACE_QUERY_KEY],
+    queryFn: async () => {
+      const req = await fetch('/api/torrents/disk-space');
       return await req.json();
     },
     enabled: !!user && user.role === UserRole.ADMIN,
@@ -81,6 +107,58 @@ export const TorrentsPage = () => {
 
   return (
     <Container>
+      {diskSpace && (
+        <div className="space-y-4">
+          <Alert
+            variant={diskSpace.isLow ? 'error' : 'success'}
+            title={
+              diskSpace.isLow
+                ? `⚠️ Már csak ${diskSpace.freeFormatted} szabad`
+                : `HDD rendben: ${diskSpace.freeFormatted} szabad`
+            }
+            description={`Használatban: ${diskSpace.usedFormatted} / ${diskSpace.totalFormatted}. Figyelmeztetési határ: ${diskSpace.warningThresholdFormatted}.`}
+          />
+
+          {diskSpace.isLow && !!diskSpace.deletableCandidates?.length && (
+            <div className="overflow-x-auto md:overflow-x-visible w-full">
+              <Table className="w-full">
+                <TableCaption>
+                  Best manual delete candidates. Nothing is deleted automatically.
+                </TableCaption>
+                <TableHeader>
+                  <TableRow className="text-nowrap">
+                    <TableHead>Release name</TableHead>
+                    <TableHead>Total size</TableHead>
+                    <TableHead>Ratio</TableHead>
+                    <TableHead>Reason</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {diskSpace.deletableCandidates.map((torrent: any) => (
+                    <TableRow key={torrent.infoHash}>
+                      <TableCell>
+                        <span className="break-all line-clamp-3 overflow-hidden overflow-ellipsis">
+                          {torrent.name}
+                        </span>
+                      </TableCell>
+                      <TableCell>{bytesToGiB(torrent.size)}</TableCell>
+                      <TableCell>{torrent.ratio.toFixed(2)}</TableCell>
+                      <TableCell>{torrent.reason}</TableCell>
+                      <TableCell>
+                        {user?.role === UserRole.ADMIN && (
+                          <DeleteTorrentButton torrent={toDeleteButtonTorrent(torrent)} />
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </div>
+      )}
+
       {!!duplicateCandidates?.length && (
         <div className="overflow-x-auto md:overflow-x-visible w-full">
           <Table className="w-full">
@@ -117,17 +195,7 @@ export const TorrentsPage = () => {
                     </TableCell>
                     <TableCell>
                       {user?.role === UserRole.ADMIN && (
-                        <DeleteTorrentButton
-                          torrent={{
-                            hash: torrent.infoHash,
-                            name: torrent.name,
-                            downloaded: `${(torrent.progress * 100).toFixed(2)}%`,
-                            uploaded: `${torrent.ratio.toFixed(2)} ratio`,
-                            ratio: torrent.ratio.toFixed(2),
-                            progress: `${(torrent.progress * 100).toFixed(2)}%`,
-                            size: `${(torrent.size / 1024 / 1024 / 1024).toFixed(2)} GB`,
-                          }}
-                        />
+                        <DeleteTorrentButton torrent={toDeleteButtonTorrent(torrent)} />
                       )}
                     </TableCell>
                   </TableRow>

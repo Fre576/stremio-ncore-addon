@@ -46,3 +46,27 @@ export interface DuplicateTorrentCandidate {
   keep: TorrentResponse;
   deletable: TorrentResponse[];
 }
+export interface DeletableTorrentCandidate {
+  infoHash: InfoHash;
+  name: string;
+  size: number;
+  downloaded: number;
+  uploaded: number;
+  ratio: number;
+  progress: number;
+  reason: string;
+}
+
+export interface DiskSpaceInfo {
+  path: string;
+  free: number;
+  total: number;
+  used: number;
+  freeFormatted: string;
+  totalFormatted: string;
+  usedFormatted: string;
+  warningThreshold: number;
+  warningThresholdFormatted: string;
+  isLow: boolean;
+  deletableCandidates: DeletableTorrentCandidate[];
+}
