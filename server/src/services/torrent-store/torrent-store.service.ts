@@ -80,6 +80,11 @@ export class TorrentStoreService {
     return torrent ? this.mergeStoredStats(torrent) : null;
   }
 
+  public async markPlaybackActive(infoHash: string): Promise<void> {
+    this.checkServer();
+    await this.torrentServerSdk.markPlaybackActive(infoHash);
+  }
+
   public async deleteTorrent(infoHash: string): Promise<void> {
     this.checkServer();
     this.storedStats.delete(infoHash.toLowerCase());

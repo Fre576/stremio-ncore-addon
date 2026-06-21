@@ -90,6 +90,7 @@ export class StreamController {
       const torrentFilePath = await this.torrentService.downloadTorrentFile(torrentUrl);
       torrent = await this.torrentStoreService.addTorrent(torrentFilePath);
     }
+    await this.torrentStoreService.markPlaybackActive(torrent.infoHash);
     const file = torrent.files[Number(fileIdx)]!;
 
     const publicStreamUrl = new URL(c.req.url);

@@ -41,7 +41,7 @@ func (p *PlaybackLimiter) Start(client *bittorrent.Client) {
 func (p *PlaybackLimiter) MarkActive(client *bittorrent.Client, infoHash string) {
 	p.mu.Lock()
 	p.activeInfoHash = strings.ToLower(infoHash)
-	p.activeUntil = time.Now().Add(2 * time.Minute)
+	p.activeUntil = time.Now().Add(5 * time.Minute)
 	p.mu.Unlock()
 
 	p.ApplyPolicy(client)
@@ -134,6 +134,17 @@ func main() {
 	})
 
 	r.GET("/playback-limiter", func(c *gin.Context) {
+		c.JSON(http.StatusOK, playbackLimiter.Status(client))
+	})
+
+	r.POST("/playback-limiter/:infoHash", func(c *gin.Context) {
+		infoHash := c.Param("infoHash")
+		_, ok := client.Torrent(infohash.FromHexString(infoHash))
+		if !ok {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Torrent not found"})
+			return
+		}
+		playbackLimiter.MarkActive(client, infoHash)
 		c.JSON(http.StatusOK, playbackLimiter.Status(client))
 	})
 

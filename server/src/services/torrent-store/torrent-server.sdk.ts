@@ -50,6 +50,18 @@ export class TorrentServerSdk {
     return torrent;
   }
 
+  public async markPlaybackActive(infoHash: InfoHash): Promise<void> {
+    const req = await fetch(`${this.url}/playback-limiter/${infoHash}`, {
+      method: 'POST',
+    });
+    if (!req.ok) {
+      const responseText = await req.text();
+      throw Error(
+        `Could not mark playback active. Status code: ${req.status}. Error: ${responseText}`,
+      );
+    }
+  }
+
   public async deleteTorrent(infoHash: InfoHash): Promise<void> {
     const req = await fetch(`${this.url}/torrents/${infoHash}`, { method: 'DELETE' });
     if (!req.ok) {
