@@ -23,6 +23,14 @@ type TorrentResponse struct {
 }
 
 func TorrentToResponse(torrent *bittorrent.Torrent) TorrentResponse {
+	return torrentToResponse(torrent, true)
+}
+
+func TorrentToSummaryResponse(torrent *bittorrent.Torrent) TorrentResponse {
+	return torrentToResponse(torrent, false)
+}
+
+func torrentToResponse(torrent *bittorrent.Torrent, includeFiles bool) TorrentResponse {
 	stats := torrent.Stats()
 	uploaded := stats.BytesWrittenData.Int64()
 	ratio := 0.0
@@ -30,18 +38,21 @@ func TorrentToResponse(torrent *bittorrent.Torrent) TorrentResponse {
 		ratio = float64(uploaded) / float64(torrent.Length())
 	}
 
-	files := make([]TorrentFile, 0, len(torrent.Files()))
-	for _, file := range torrent.Files() {
-		progress := 0.0
-		if file.Length() > 0 {
-			progress = float64(file.BytesCompleted()) / float64(file.Length())
+	files := []TorrentFile{}
+	if includeFiles {
+		files = make([]TorrentFile, 0, len(torrent.Files()))
+		for _, file := range torrent.Files() {
+			progress := 0.0
+			if file.Length() > 0 {
+				progress = float64(file.BytesCompleted()) / float64(file.Length())
+			}
+			files = append(files, TorrentFile{
+				Name:     file.DisplayPath(),
+				Path:     file.Path(),
+				Size:     file.Length(),
+				Progress: progress,
+			})
 		}
-		files = append(files, TorrentFile{
-			Name:     file.DisplayPath(),
-			Path:     file.Path(),
-			Size:     file.Length(),
-			Progress: progress,
-		})
 	}
 
 	progress := 0.0
@@ -65,7 +76,7 @@ func TorrentToResponse(torrent *bittorrent.Torrent) TorrentResponse {
 func TorrentsToResponse(torrents []*bittorrent.Torrent) []TorrentResponse {
 	responses := make([]TorrentResponse, 0, len(torrents))
 	for _, torrent := range torrents {
-		responses = append(responses, TorrentToResponse(torrent))
+		responses = append(responses, TorrentToSummaryResponse(torrent))
 	}
 	return responses
 }

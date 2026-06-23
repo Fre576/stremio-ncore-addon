@@ -6,8 +6,21 @@ export class TorrentServerSdk {
   private torrentFilePaths = new Map<InfoHash, string>();
   constructor(private readonly url: string) {}
 
+  private async fetchWithTimeout(
+    url: string,
+    init: RequestInit = {},
+    timeoutMs = 20_000,
+  ): Promise<Response> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...init, signal: controller.signal });
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
   public async getTorrent(infoHash: InfoHash): Promise<TorrentResponse | null> {
-    const req = await fetch(`${this.url}/torrents/${infoHash}`);
+    const req = await this.fetchWithTimeout(`${this.url}/torrents/${infoHash}`);
     if (!req.ok) {
       if (req.status === HttpStatusCode.NOT_FOUND) {
         return null;
@@ -21,7 +34,7 @@ export class TorrentServerSdk {
   }
 
   public async getAllTorrents(): Promise<TorrentResponse[]> {
-    const req = await fetch(`${this.url}/torrents`);
+    const req = await this.fetchWithTimeout(`${this.url}/torrents`);
     if (!req.ok) {
       const responseText = await req.text();
       throw Error(
@@ -35,7 +48,7 @@ export class TorrentServerSdk {
     torrentFilePath: string,
     { verify = true }: { verify?: boolean } = {},
   ): Promise<TorrentResponse> {
-    const req = await fetch(`${this.url}/torrents`, {
+    const req = await this.fetchWithTimeout(`${this.url}/torrents`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -54,7 +67,7 @@ export class TorrentServerSdk {
   }
 
   public async markPlaybackActive(infoHash: InfoHash): Promise<void> {
-    const req = await fetch(`${this.url}/playback-limiter/${infoHash}`, {
+    const req = await this.fetchWithTimeout(`${this.url}/playback-limiter/${infoHash}`, {
       method: 'POST',
     });
     if (!req.ok) {
@@ -71,7 +84,7 @@ export class TorrentServerSdk {
     activeUntil: string;
     activeTimeoutMs: number;
   }> {
-    const req = await fetch(`${this.url}/playback-limiter`);
+    const req = await this.fetchWithTimeout(`${this.url}/playback-limiter`);
     if (!req.ok) {
       const responseText = await req.text();
       throw Error(
@@ -82,7 +95,9 @@ export class TorrentServerSdk {
   }
 
   public async deleteTorrent(infoHash: InfoHash): Promise<void> {
-    const req = await fetch(`${this.url}/torrents/${infoHash}`, { method: 'DELETE' });
+    const req = await this.fetchWithTimeout(`${this.url}/torrents/${infoHash}`, {
+      method: 'DELETE',
+    });
     if (!req.ok) {
       const responseText = await req.text();
       throw Error(
