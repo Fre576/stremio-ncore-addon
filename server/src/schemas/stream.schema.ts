@@ -5,7 +5,16 @@ export enum StreamType {
   TV_SHOW = 'series',
 }
 
-const imdbSchema = z.string().startsWith('tt').endsWith('.json');
+const ncorePrefix = 'ncore-';
+const mediaIdSchema = z
+  .string()
+  .endsWith('.json')
+  .refine((value) => /^(ncore-)?tt\d+(?::\d+:\d+)?\.json$/.test(value), {
+    message: 'Invalid media id',
+  });
+
+const stripNcorePrefix = (value: string) =>
+  value.startsWith(ncorePrefix) ? value.slice(ncorePrefix.length) : value;
 
 export const streamQuerySchema = z
   .object({ deviceToken: z.string() })
@@ -13,20 +22,23 @@ export const streamQuerySchema = z
     z.discriminatedUnion('type', [
       z.object({
         type: z.literal(StreamType.MOVIE),
-        imdbId: imdbSchema,
+        imdbId: mediaIdSchema.refine((value) => /^(ncore-)?tt\d+\.json$/.test(value), {
+          message: 'Movie ID contains season or episode numbers',
+        }),
       }),
       z.object({
         type: z.literal(StreamType.TV_SHOW),
-        imdbId: imdbSchema.regex(
-          /tt\d+:\d+:\d+/,
-          "IMDB ID doesn't contain season and episode numbers",
+        imdbId: mediaIdSchema.refine(
+          (value) => /^(ncore-)?tt\d+:\d+:\d+\.json$/.test(value),
+          { message: "IMDB ID doesn't contain season and episode numbers" },
         ),
       }),
     ]),
   )
   .transform((data) => {
+    const normalizedId = stripNcorePrefix(data.imdbId.replace('.json', ''));
     if (data.type === StreamType.TV_SHOW) {
-      const [imdbId, season, episode] = data.imdbId.split(':') as [
+      const [imdbId, season, episode] = normalizedId.split(':') as [
         string,
         string,
         string,
@@ -40,7 +52,7 @@ export const streamQuerySchema = z
     }
     return {
       ...data,
-      imdbId: data.imdbId.replace('.json', ''),
+      imdbId: normalizedId,
       season: undefined,
       episode: undefined,
     };

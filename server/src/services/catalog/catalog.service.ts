@@ -4,6 +4,8 @@ import type { CinemeatService } from '@/services/cinemeta';
 import type { TorrentSourceManager } from '@/services/torrent-source';
 import type { TorrentCatalogItem } from '@/services/torrent-source/types';
 
+const NCORE_META_ID_PREFIX = 'ncore-';
+
 type CatalogMeta = {
   id: string;
   type: StreamType;
@@ -14,6 +16,7 @@ type CatalogMeta = {
   description?: string;
   releaseInfo?: string;
   genres?: string[];
+  videos?: Array<{ id: string; [key: string]: unknown }>;
 };
 
 export class CatalogService {
@@ -74,19 +77,23 @@ export class CatalogService {
       return { meta: null };
     }
 
-    const normalizedImdbId = this.stripJsonSuffix(imdbId);
+    const ncoreImdbId = this.fromNcoreMetaId(imdbId);
+    if (!ncoreImdbId) {
+      return { meta: null };
+    }
+
     try {
       const { meta } = await this.cinemetaService.getMetadataByImdbId(
         normalizedType,
-        normalizedImdbId,
+        ncoreImdbId,
       );
       return {
-        meta: {
+        meta: this.withNcoreMetaIds({
           ...meta,
-          id: meta.imdb_id,
+          id: this.toNcoreMetaId(meta.imdb_id),
           type: normalizedType,
           name: meta.name,
-        },
+        }),
       };
     } catch (error) {
       console.error('Failed to get catalog meta from Cinemeta', error);
@@ -100,16 +107,16 @@ export class CatalogService {
         item.type,
         item.imdbId,
       );
-      return {
+      return this.withNcoreMetaIds({
         ...meta,
-        id: meta.imdb_id,
+        id: this.toNcoreMetaId(meta.imdb_id),
         type: item.type,
         name: meta.name,
         description: meta.description ?? item.releaseName,
-      };
+      });
     } catch {
       return {
-        id: item.imdbId,
+        id: this.toNcoreMetaId(item.imdbId),
         type: item.type,
         name: item.fallbackTitle,
         description: item.releaseName,
@@ -117,6 +124,33 @@ export class CatalogService {
     }
   }
 
+  private toNcoreMetaId(imdbId: string): string {
+    return imdbId.startsWith(NCORE_META_ID_PREFIX)
+      ? imdbId
+      : `${NCORE_META_ID_PREFIX}${imdbId}`;
+  }
+
+  private fromNcoreMetaId(value: string): string | null {
+    const normalized = this.stripJsonSuffix(value);
+    if (!normalized.startsWith(NCORE_META_ID_PREFIX)) {
+      return null;
+    }
+    const imdbId = normalized.slice(NCORE_META_ID_PREFIX.length);
+    return /^tt\d+$/.test(imdbId) ? imdbId : null;
+  }
+
+  private withNcoreMetaIds(meta: CatalogMeta): CatalogMeta {
+    return {
+      ...meta,
+      id: this.toNcoreMetaId(meta.id),
+      videos: meta.videos?.map((video) => ({
+        ...video,
+        id: video.id.startsWith(NCORE_META_ID_PREFIX)
+          ? video.id
+          : `${NCORE_META_ID_PREFIX}${video.id}`,
+      })),
+    };
+  }
   private normalizeType(type: string): StreamType | null {
     if (type === StreamType.MOVIE || type === StreamType.TV_SHOW) {
       return type;
