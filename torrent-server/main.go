@@ -255,22 +255,27 @@ func main() {
 		// Get file size
 		fileSize := targetFile.Length()
 
-		// Parse range header
+		// Parse range header. Some clients start with a plain GET before switching to byte ranges.
 		rangeHeader := c.GetHeader("Range")
-		start, end, err := rangeparser.ParseRangeHeader(rangeHeader, fileSize)
-
-		if err != nil {
-			fmt.Println(err)
-			c.Status(http.StatusRequestedRangeNotSatisfiable)
-			c.Header("Accept-Ranges", "bytes")
-			c.Header("Content-Type", getContentType(filepath))
-			c.Header("Content-Range", fmt.Sprintf("bytes */%d", fileSize))
-			return
+		start, end := int64(0), fileSize-1
+		statusCode := http.StatusOK
+		if rangeHeader != "" {
+			var err error
+			start, end, err = rangeparser.ParseRangeHeader(rangeHeader, fileSize)
+			if err != nil {
+				fmt.Println(err)
+				c.Status(http.StatusRequestedRangeNotSatisfiable)
+				c.Header("Accept-Ranges", "bytes")
+				c.Header("Content-Type", getContentType(filepath))
+				c.Header("Content-Range", fmt.Sprintf("bytes */%d", fileSize))
+				return
+			}
+			statusCode = http.StatusPartialContent
+			c.Header("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, fileSize))
 		}
 
 		// Set headers
-		c.Status(http.StatusPartialContent)
-		c.Header("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, fileSize))
+		c.Status(statusCode)
 		c.Header("Accept-Ranges", "bytes")
 		c.Header("Content-Length", fmt.Sprintf("%d", end-start+1))
 		c.Header("Content-Type", getContentType(filepath))
@@ -287,7 +292,7 @@ func main() {
 		// Stream the range
 		// Create a limited reader to read only the requested range
 		limitedReader := io.LimitReader(reader, end-start+1)
-		c.DataFromReader(http.StatusPartialContent, end-start+1, getContentType(filepath), limitedReader, nil)
+		c.DataFromReader(statusCode, end-start+1, getContentType(filepath), limitedReader, nil)
 	})
 
 	r.Run(":" + strconv.Itoa(port))

@@ -21,14 +21,28 @@ import {
   SeriesCategory,
   SERIES_CATEGORY_FILTERS,
 } from './constants';
-import { NcoreTorrentDetails } from './ncore-torrent-details';
+import {
+  type CachedNcoreTorrentDetails,
+  NcoreTorrentDetails,
+} from './ncore-torrent-details';
 import type { TorrentService } from '@/services/torrent';
 import type { StreamQuery } from '@/schemas/stream.schema';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { env } from '@/env';
 import { StreamType } from '@/schemas/stream.schema';
 import { processInBatches } from '@/utils/process-in-batches';
 import { CinemeatService } from '@/services/cinemeta';
 import { isSupportedMedia } from '@/utils/media-file-extensions';
 import { Cached, DEFAULT_MAX, DEFAULT_TTL } from '@/utils/cache';
+
+type NcoreStreamCache = Record<
+  string,
+  {
+    updatedAt: string;
+    torrents: CachedNcoreTorrentDetails[];
+  }
+>;
 
 export class NcoreService implements TorrentSource {
   public name = 'ncore';
@@ -45,6 +59,7 @@ export class NcoreService implements TorrentSource {
     pass: null as string | null,
     cookieExpirationDate: 0,
   };
+  private streamCacheFilePath = resolve(env.ADDON_DIR, 'config/ncore-stream-cache.json');
 
   public async getCookies(username: string, password: string): Promise<string> {
     if (
@@ -155,6 +170,60 @@ export class NcoreService implements TorrentSource {
     return torrentsWithParsedData;
   }
 
+  private getStreamCacheKey({
+    imdbId,
+    type,
+    season,
+    episode,
+  }: Pick<StreamQuery, 'imdbId' | 'type' | 'season' | 'episode'>): string {
+    return [type, imdbId, season ?? '', episode ?? ''].join('|');
+  }
+
+  private loadStreamCache(): NcoreStreamCache {
+    if (!existsSync(this.streamCacheFilePath)) {
+      return {};
+    }
+    try {
+      return JSON.parse(readFileSync(this.streamCacheFilePath, 'utf-8')) as NcoreStreamCache;
+    } catch (error) {
+      console.error('Failed to load nCore stream cache:', error);
+      return {};
+    }
+  }
+
+  private saveStreamCacheEntry(
+    params: Pick<StreamQuery, 'imdbId' | 'type' | 'season' | 'episode'>,
+    torrents: NcoreTorrentDetails[],
+  ): void {
+    if (torrents.length === 0) {
+      return;
+    }
+    try {
+      const cache = this.loadStreamCache();
+      cache[this.getStreamCacheKey(params)] = {
+        updatedAt: new Date().toISOString(),
+        torrents: torrents.map((torrent) => torrent.toCacheRecord()),
+      };
+      mkdirSync(dirname(this.streamCacheFilePath), { recursive: true });
+      writeFileSync(this.streamCacheFilePath, JSON.stringify(cache, null, 2));
+    } catch (error) {
+      console.error('Failed to save nCore stream cache:', error);
+    }
+  }
+
+  private getCachedStreamTorrents(
+    params: Pick<StreamQuery, 'imdbId' | 'type' | 'season' | 'episode'>,
+  ): NcoreTorrentDetails[] {
+    const cache = this.loadStreamCache();
+    const entry = cache[this.getStreamCacheKey(params)];
+    if (!entry) {
+      return [];
+    }
+    console.log(
+      `Using cached nCore streams for ${params.imdbId}${params.season ? ` S${params.season}E${params.episode}` : ''} from ${entry.updatedAt}.`,
+    );
+    return entry.torrents.map((torrent) => NcoreTorrentDetails.fromCacheRecord(torrent));
+  }
   public async getCatalogItems({
     type,
     catalogId,
@@ -316,7 +385,20 @@ export class NcoreService implements TorrentSource {
     });
   }
 
-  public async getTorrentsForImdbId({
+  public async getTorrentsForImdbId(
+    params: Pick<StreamQuery, 'imdbId' | 'type' | 'season' | 'episode'>,
+  ): Promise<NcoreTorrentDetails[]> {
+    try {
+      const torrents = await this.fetchTorrentsForImdbId(params);
+      this.saveStreamCacheEntry(params, torrents);
+      return torrents;
+    } catch (error) {
+      console.error('Failed to fetch live nCore streams. Falling back to cache.', error);
+      return this.getCachedStreamTorrents(params);
+    }
+  }
+
+  private async fetchTorrentsForImdbId({
     imdbId,
     type,
     season,

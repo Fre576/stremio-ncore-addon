@@ -14,6 +14,12 @@ import {
 } from './constants';
 import { Language, Resolution } from '@/db/schema/users';
 
+export type CachedNcoreTorrentDetails = {
+  ncoreTorrent: NcoreTorrent;
+  parsedDetails: ParsedTorrentDetails;
+  isSpeculated?: boolean;
+};
+
 export class NcoreTorrentDetails extends TorrentDetails {
   public sourceName: string;
   public sourceId: string;
@@ -41,6 +47,36 @@ export class NcoreTorrentDetails extends TorrentDetails {
     this.category = ncoreTorrent.category;
     this.release_name = ncoreTorrent.release_name;
     this.seeders = ncoreTorrent.seeders;
+  }
+
+  public toCacheRecord(): CachedNcoreTorrentDetails {
+    return {
+      ncoreTorrent: {
+        torrent_id: this.sourceId,
+        category: this.category,
+        release_name: this.release_name,
+        details_url: '',
+        download_url: '',
+        freeleech: false,
+        imdb_id: '',
+        imdb_rating: 0,
+        size: `${this.files.reduce((sum, file) => sum + file.length, 0)}`,
+        type: 'movie',
+        leechers: '0',
+        seeders: this.seeders,
+      },
+      parsedDetails: {
+        infoHash: this.infoHash,
+        files: this.files,
+      },
+      isSpeculated: this.isSpeculated,
+    };
+  }
+
+  public static fromCacheRecord(record: CachedNcoreTorrentDetails): NcoreTorrentDetails {
+    const torrent = new NcoreTorrentDetails(record.ncoreTorrent, record.parsedDetails);
+    torrent.isSpeculated = record.isSpeculated;
+    return torrent;
   }
 
   public displayResolution(resolution: Resolution): string {
