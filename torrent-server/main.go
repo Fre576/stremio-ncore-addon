@@ -60,7 +60,15 @@ func (p *PlaybackLimiter) ApplyPolicy(client *bittorrent.Client) {
 	p.mu.Unlock()
 
 	for _, torrent := range client.Torrents() {
-		if activeInfoHash == "" || torrent.InfoHash().HexString() == activeInfoHash {
+		if activeInfoHash == "" {
+			// Idle mode: keep seeding possible, but do not let old partial torrents
+			// resume downloading in the background and overload the torrent engine.
+			torrent.DisallowDataDownload()
+			torrent.AllowDataUpload()
+			continue
+		}
+
+		if torrent.InfoHash().HexString() == activeInfoHash {
 			torrent.AllowDataDownload()
 			torrent.AllowDataUpload()
 			continue
