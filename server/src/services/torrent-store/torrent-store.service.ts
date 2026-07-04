@@ -16,7 +16,9 @@ import { formatBytes } from '@/utils/bytes';
 import { globSync } from 'glob';
 import { TorrentServerSdk } from './torrent-server.sdk';
 import { sleep } from '@/utils/sleep';
-import { existsSync, mkdirSync, readFileSync, statfsSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statfsSync, statSync, writeFileSync } from 'node:fs';
+
+const MAX_STARTUP_TORRENTS = 8;
 
 export class TorrentStoreService {
   private torrentServerUrl: string = `http://localhost:${env.TORRENT_SERVER_PORT}`;
@@ -362,14 +364,24 @@ export class TorrentStoreService {
   public async loadExistingTorrents(): Promise<void> {
     this.checkServer();
     console.log('Looking for torrent files...');
-    const savedTorrentFilePaths = globSync(`${env.TORRENTS_DIR}/*.torrent`);
-    console.log(`Found ${savedTorrentFilePaths.length} torrent files.`);
+    const allTorrentFilePaths = globSync(`${env.TORRENTS_DIR}/*.torrent`);
+    const savedTorrentFilePaths = allTorrentFilePaths
+      .map((filePath) => ({
+        filePath,
+        mtimeMs: statSync(filePath).mtimeMs,
+      }))
+      .sort((a, z) => z.mtimeMs - a.mtimeMs)
+      .slice(0, MAX_STARTUP_TORRENTS)
+      .map(({ filePath }) => filePath);
+    console.log(
+      `Found ${allTorrentFilePaths.length} torrent files. Loading ${savedTorrentFilePaths.length} newest at startup.`,
+    );
     await Promise.allSettled(
       savedTorrentFilePaths.map((filePath) => {
         return this.addTorrent(filePath, { verify: false });
       }),
     );
-    console.log('Torrent files loaded. Skipped full startup verification for existing torrents.');
+    console.log('Startup torrent preload finished. Skipped full verification and left older torrents idle.');
   }
 
   public deleteUnnecessaryTorrents = async () => {

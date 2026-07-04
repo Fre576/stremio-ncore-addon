@@ -88,7 +88,7 @@ export class StreamController {
         });
       }
       const torrentFilePath = await this.torrentService.downloadTorrentFile(torrentUrl);
-      torrent = await this.torrentStoreService.addTorrent(torrentFilePath);
+      torrent = await this.torrentStoreService.addTorrent(torrentFilePath, { verify: false });
     }
     await this.torrentStoreService.markPlaybackActive(torrent.infoHash);
     const file = torrent.files[Number(fileIdx)]!;
