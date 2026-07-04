@@ -32,8 +32,10 @@ export interface StoredTorrentStats {
   infoHash: InfoHash;
   name: string;
   size: number;
+  downloaded?: number;
   uploaded: number;
   ratio: number;
+  progress?: number;
   updatedAt: string;
 }
 

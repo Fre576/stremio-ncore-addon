@@ -12,13 +12,23 @@ import {
 } from './types';
 import { env } from '@/env';
 import { dirname, resolve } from 'node:path';
+import parseTorrent from 'parse-torrent';
 import { formatBytes } from '@/utils/bytes';
 import { globSync } from 'glob';
 import { TorrentServerSdk } from './torrent-server.sdk';
 import { sleep } from '@/utils/sleep';
-import { existsSync, mkdirSync, readFileSync, statfsSync, statSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  statfsSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 
-const MAX_STARTUP_TORRENTS = 8;
+const MAX_STARTUP_TORRENTS = 16;
+const MAX_STARTUP_COMPLETED_TORRENTS = 12;
+const MAX_STARTUP_PARTIAL_TORRENTS = 4;
 
 export class TorrentStoreService {
   private torrentServerUrl: string = `http://localhost:${env.TORRENT_SERVER_PORT}`;
@@ -177,7 +187,10 @@ export class TorrentStoreService {
     const torrents = await this.getAllTorrents();
     const completed = torrents.filter((torrent) => torrent.progress >= 0.999);
     const uploadedTotal = torrents.reduce((sum, torrent) => sum + torrent.uploaded, 0);
-    const downloadedTotal = torrents.reduce((sum, torrent) => sum + torrent.downloaded, 0);
+    const downloadedTotal = torrents.reduce(
+      (sum, torrent) => sum + torrent.downloaded,
+      0,
+    );
     const averageRatio = downloadedTotal > 0 ? uploadedTotal / downloadedTotal : 0;
     const hasUploaded = uploadedTotal > 0;
 
@@ -258,7 +271,8 @@ export class TorrentStoreService {
     const qualityIndex = normalized.search(
       /\b(2160p|1080p|720p|480p|uhd|bluray|blu ray|web dl|webdl|webrip|hdtv|hdr|dv|dovi|x265|x264|h265|h264)\b/,
     );
-    const titlePart = qualityIndex >= 0 ? normalized.slice(0, qualityIndex).trim() : normalized;
+    const titlePart =
+      qualityIndex >= 0 ? normalized.slice(0, qualityIndex).trim() : normalized;
     if (!titlePart) {
       return null;
     }
@@ -275,7 +289,9 @@ export class TorrentStoreService {
       return;
     }
     try {
-      const rawStats = JSON.parse(readFileSync(this.statsFilePath, 'utf-8')) as StoredTorrentStats[];
+      const rawStats = JSON.parse(
+        readFileSync(this.statsFilePath, 'utf-8'),
+      ) as StoredTorrentStats[];
       this.storedStats = new Map(
         rawStats.map((stat) => [stat.infoHash.toLowerCase(), stat]),
       );
@@ -318,16 +334,26 @@ export class TorrentStoreService {
     for (const torrent of torrents) {
       const key = torrent.infoHash.toLowerCase();
       const previous = this.storedStats.get(key);
+      const downloaded = Math.max(previous?.downloaded ?? 0, torrent.downloaded);
       const uploaded = Math.max(previous?.uploaded ?? 0, torrent.uploaded);
       const ratio = Math.max(previous?.ratio ?? 0, torrent.ratio);
+      const progress = Math.max(previous?.progress ?? 0, torrent.progress);
 
-      if (!previous || previous.uploaded !== uploaded || previous.ratio !== ratio) {
+      if (
+        !previous ||
+        previous.downloaded !== downloaded ||
+        previous.uploaded !== uploaded ||
+        previous.ratio !== ratio ||
+        previous.progress !== progress
+      ) {
         this.storedStats.set(key, {
           infoHash: torrent.infoHash,
           name: torrent.name,
           size: torrent.size,
+          downloaded,
           uploaded,
           ratio,
+          progress,
           updatedAt,
         });
         changed = true;
@@ -346,8 +372,10 @@ export class TorrentStoreService {
     }
     return {
       ...torrent,
+      downloaded: Math.max(torrent.downloaded, storedStats.downloaded ?? 0),
       uploaded: Math.max(torrent.uploaded, storedStats.uploaded),
       ratio: Math.max(torrent.ratio, storedStats.ratio),
+      progress: Math.max(torrent.progress, storedStats.progress ?? 0),
     };
   }
 
@@ -364,26 +392,109 @@ export class TorrentStoreService {
   public async loadExistingTorrents(): Promise<void> {
     this.checkServer();
     console.log('Looking for torrent files...');
-    const allTorrentFilePaths = globSync(`${env.TORRENTS_DIR}/*.torrent`);
-    const savedTorrentFilePaths = allTorrentFilePaths
-      .map((filePath) => ({
-        filePath,
-        mtimeMs: statSync(filePath).mtimeMs,
-      }))
+    const allTorrentFilePaths = await Promise.all(
+      globSync(`${env.TORRENTS_DIR}/*.torrent`).map(async (filePath) => {
+        const infoHash = this.getInfoHashFromTorrentFilePath(filePath);
+        const storedStats = infoHash
+          ? this.storedStats.get(infoHash.toLowerCase())
+          : undefined;
+        const isCompleteOnDisk = await this.isTorrentCompleteOnDisk(filePath);
+        return {
+          filePath,
+          mtimeMs: statSync(filePath).mtimeMs,
+          progress: isCompleteOnDisk ? 1 : (storedStats?.progress ?? 0),
+          ratio: storedStats?.ratio ?? 0,
+          uploaded: storedStats?.uploaded ?? 0,
+        };
+      }),
+    );
+    const completedTorrentFilePaths = allTorrentFilePaths
+      .filter((torrentFile) => torrentFile.progress >= 0.999)
+      .sort((a, z) => {
+        const ratioDiff = z.ratio - a.ratio;
+        if (ratioDiff !== 0) {
+          return ratioDiff;
+        }
+        const uploadedDiff = z.uploaded - a.uploaded;
+        if (uploadedDiff !== 0) {
+          return uploadedDiff;
+        }
+        return z.mtimeMs - a.mtimeMs;
+      })
+      .slice(0, MAX_STARTUP_COMPLETED_TORRENTS);
+    const completedFilePaths = new Set(
+      completedTorrentFilePaths.map(({ filePath }) => filePath),
+    );
+    const partialTorrentFilePaths = allTorrentFilePaths
+      .filter((torrentFile) => !completedFilePaths.has(torrentFile.filePath))
       .sort((a, z) => z.mtimeMs - a.mtimeMs)
+      .slice(0, MAX_STARTUP_PARTIAL_TORRENTS);
+    const savedTorrentFilePaths = [
+      ...completedTorrentFilePaths,
+      ...partialTorrentFilePaths,
+    ]
       .slice(0, MAX_STARTUP_TORRENTS)
       .map(({ filePath }) => filePath);
     console.log(
-      `Found ${allTorrentFilePaths.length} torrent files. Loading ${savedTorrentFilePaths.length} newest at startup.`,
+      `Found ${allTorrentFilePaths.length} torrent files. Loading ${completedTorrentFilePaths.length} completed and ${partialTorrentFilePaths.length} recent partial/unknown torrents at startup.`,
     );
     await Promise.allSettled(
       savedTorrentFilePaths.map((filePath) => {
         return this.addTorrent(filePath, { verify: false });
       }),
     );
-    console.log('Startup torrent preload finished. Skipped full verification and left older torrents idle.');
+    console.log(
+      'Startup torrent preload finished. Skipped full verification and left older torrents idle.',
+    );
   }
 
+  private async isTorrentCompleteOnDisk(torrentFilePath: string): Promise<boolean> {
+    type ParsedTorrent = {
+      name?: string;
+      files?: Array<{
+        path?: string | string[];
+        name?: string;
+        length?: number;
+      }>;
+    };
+
+    try {
+      const torrent = (await parseTorrent(
+        readFileSync(torrentFilePath),
+      )) as ParsedTorrent;
+      if (!torrent.name || !Array.isArray(torrent.files) || torrent.files.length === 0) {
+        return false;
+      }
+
+      return torrent.files.every((file) => {
+        const parsedPath = Array.isArray(file.path) ? file.path.join('/') : file.path;
+        const filePath = parsedPath ?? file.name;
+        if (!filePath || typeof file.length !== 'number') {
+          return false;
+        }
+
+        const candidatePaths = [
+          resolve(env.DOWNLOADS_DIR, filePath),
+          resolve(env.DOWNLOADS_DIR, torrent.name!, filePath),
+        ];
+        const fullPath = candidatePaths.find((candidatePath) =>
+          existsSync(candidatePath),
+        );
+        if (!fullPath) {
+          return false;
+        }
+
+        return statSync(fullPath).size >= file.length;
+      });
+    } catch (error) {
+      console.error(`Failed to inspect torrent file ${torrentFilePath}:`, error);
+      return false;
+    }
+  }
+  private getInfoHashFromTorrentFilePath(filePath: string): string | null {
+    const match = filePath.match(/-([a-f0-9]{40})\.torrent$/i);
+    return match?.[1] ?? null;
+  }
   public deleteUnnecessaryTorrents = async () => {
     this.checkServer();
     console.log('Gathering unnecessary torrents...');
