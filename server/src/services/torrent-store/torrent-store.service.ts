@@ -39,6 +39,7 @@ export class TorrentStoreService {
   private statsFilePath = resolve(env.ADDON_DIR, 'config/torrent-stats.json');
   private storedStats = new Map<string, StoredTorrentStats>();
   private statsInterval: NodeJS.Timeout | null = null;
+  private isRefreshingStats = false;
 
   constructor(private torrentSource: TorrentSourceManager) {
     this.loadStoredStats();
@@ -318,13 +319,20 @@ export class TorrentStoreService {
       return;
     }
     this.statsInterval = setInterval(async () => {
+      if (this.isRefreshingStats) {
+        console.warn('Skipping persisted torrent stats refresh because the previous refresh is still running.');
+        return;
+      }
+      this.isRefreshingStats = true;
       try {
-        const torrents = await this.torrentServerSdk.getAllTorrents();
+        const torrents = await this.torrentServerSdk.getAllTorrents(90_000);
         this.updateStoredStats(torrents);
       } catch (error) {
         console.error('Failed to refresh persisted torrent stats:', error);
+      } finally {
+        this.isRefreshingStats = false;
       }
-    }, 30_000);
+    }, 120_000);
   }
 
   private updateStoredStats(torrents: TorrentResponse[]): void {

@@ -33,8 +33,8 @@ export class TorrentServerSdk {
     return (await req.json()) as TorrentResponse;
   }
 
-  public async getAllTorrents(): Promise<TorrentResponse[]> {
-    const req = await this.fetchWithTimeout(`${this.url}/torrents`);
+  public async getAllTorrents(timeoutMs = 60_000): Promise<TorrentResponse[]> {
+    const req = await this.fetchWithTimeout(`${this.url}/torrents`, {}, timeoutMs);
     if (!req.ok) {
       const responseText = await req.text();
       throw Error(
