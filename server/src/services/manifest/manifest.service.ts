@@ -21,7 +21,7 @@ export class ManifestService {
         configurationRequired: true,
       },
       baseUrl: config.addonUrl,
-      version: '0.8.1',
+      version: '0.8.3',
       name: 'nCore',
       description: 'Provides streams from a personal nCore account.',
       catalogs: CATALOG_DEFINITIONS.map((catalog) => ({
@@ -30,7 +30,7 @@ export class ManifestService {
       })),
       resources: ['catalog', 'meta', 'stream'],
       types: ['movie', 'series'],
-      idPrefixes: ['tt'],
+      idPrefixes: ['tt', 'ncore-tt'],
       logo: `${config.addonUrl}/stremio-ncore-addon-logo-rounded.png`,
     } as const satisfies CustomManifest;
   }

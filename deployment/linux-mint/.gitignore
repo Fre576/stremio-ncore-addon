@@ -1,0 +1,5 @@
+ncore.env
+data/
+*.db
+*.db-*
+*.log

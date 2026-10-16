@@ -1,0 +1,34 @@
+name: stremio-ncore-addon
+services:
+  stremio-ncore-addon:
+    build:
+      context: ../..
+    image: stremio-ncore-addon:0.8.3
+    container_name: stremio-ncore-addon
+    env_file:
+      - path: ./ncore.env
+        format: raw
+    environment:
+      TZ: Europe/Budapest
+    ports:
+      - "${LAN_IP:?Set LAN_IP in .env}:3000:3000/tcp"
+      - "${LAN_IP:?Set LAN_IP in .env}:3443:3443/tcp"
+      - "${LAN_IP:?Set LAN_IP in .env}:42069:42069/tcp"
+      - "${LAN_IP:?Set LAN_IP in .env}:42069:42069/udp"
+    volumes:
+      - type: bind
+        source: ${STATE_DIR:?Set STATE_DIR in .env}
+        target: /addon
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${HDD_DOWNLOADS_DIR:?Set HDD_DOWNLOADS_DIR in .env}
+        target: /addon/downloads
+        bind:
+          create_host_path: false
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
