@@ -1,6 +1,6 @@
 # Linux Mint, Docker és külső HDD
 
-Ez egy újra felhasználható telepítési minta a 0.8.4 forrásához. Nem tartalmaz jelszót, tokent, adatbázist vagy letöltött videót. A meglévő, működő telepítést a GitHubra feltöltés nem módosítja. Az eredeti telepítés több compose fájlt használ; az itt közölt egyfájlos minta ugyanazt az SSD/HDD elrendezést teszi beállíthatóvá, saját helyben épített image-dzsel.
+Ez egy újra felhasználható telepítési minta a 0.8.5 forrásához. Nem tartalmaz jelszót, tokent, adatbázist vagy letöltött videót. A meglévő, működő telepítést a GitHubra feltöltés nem módosítja. Az eredeti telepítés több compose fájlt használ; az itt közölt egyfájlos minta ugyanazt az SSD/HDD elrendezést teszi beállíthatóvá, saját helyben épített image-dzsel.
 
 ## Elrendezés
 

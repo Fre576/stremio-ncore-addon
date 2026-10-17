@@ -3,7 +3,7 @@ import { contextStorage } from 'hono/context-storage';
 import { serve } from '@hono/node-server';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
-import { createServer } from 'node:https';
+import { guardedHttpServer, guardedHttpsServer } from './utils/guarded-server';
 
 import { UserService } from '@/services/user';
 import { ManifestService } from '@/services/manifest';
@@ -209,6 +209,7 @@ baseApp.route('/api', app);
 serve({
   fetch: baseApp.fetch,
   port: env.PORT,
+  createServer: guardedHttpServer,
 });
 console.log(`HTTP server started on port ${env.PORT}!`);
 
@@ -216,7 +217,7 @@ console.log(`HTTP server started on port ${env.PORT}!`);
 serve({
   fetch: baseApp.fetch,
   port: env.HTTPS_PORT,
-  createServer,
+  createServer: guardedHttpsServer,
   serverOptions: await createServerOptions(),
 });
 console.log(`HTTPS server started on port ${env.HTTPS_PORT}!`);
