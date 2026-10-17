@@ -1,0 +1,12 @@
+{
+  "container": "stremio-ncore-addon",
+  "mount": "/media/USER/HDD",
+  "uuid": "REPLACE_WITH_HDD_UUID",
+  "socket": "/run/stremio-control/control.sock",
+  "web_url": "http://192.168.1.100:3000",
+  "interval": 15,
+  "torrents_dir": "/opt/stremio-ncore/data/torrents",
+  "devices": {},
+  "recovery": {"enabled": true, "failures": 3, "cooldown": 600, "max_per_hour": 3, "startup_grace": 120},
+  "cleanup": {"enabled": true, "low_bytes": 214748364800, "target_bytes": 322122547200, "min_days": 30}
+}

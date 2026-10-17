@@ -1,0 +1,9 @@
+services:
+  stremio-ncore-addon:
+    environment:
+      STREMIO_MANAGED_CLEANUP: "1"
+    volumes:
+      - type: bind
+        source: /run/stremio-control
+        target: /run/stremio-control
+        read_only: true

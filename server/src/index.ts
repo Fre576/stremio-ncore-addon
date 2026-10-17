@@ -51,6 +51,7 @@ import {
   updatePasswordSchema,
 } from './schemas/user.schema';
 import { createServerOptions } from './utils/server-options';
+import { controlRequest } from './controllers/control.controller';
 
 const userService = new UserService(db);
 const configService = new ConfigService(db, userService);
@@ -193,6 +194,8 @@ const app = new Hono<HonoEnv>()
     (c) => streamController.play(c),
   )
 
+  .get('/control/status', isAdmin, (c) => controlRequest(c, 'GET', '/status'))
+  .post('/control/action', isAdmin, (c) => controlRequest(c, 'POST', '/action'))
   .get('/torrents', isAdmin, (c) => torrentController.getTorrentStats(c))
   .get('/torrents/disk-space', isAdmin, (c) => torrentController.getDiskSpaceInfo(c))
   .get('/torrents/upload-health', isAdmin, (c) =>

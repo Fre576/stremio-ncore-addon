@@ -107,6 +107,10 @@ export class TorrentStoreService {
     await this.torrentServerSdk.markPlaybackActive(infoHash);
   }
 
+  public getPlaybackLimiterStatus() {
+    return this.torrentServerSdk.getPlaybackLimiterStatus();
+  }
+
   public async deleteTorrent(infoHash: string): Promise<void> {
     this.checkServer();
     this.storedStats.delete(infoHash.toLowerCase());
@@ -143,7 +147,7 @@ export class TorrentStoreService {
 
   public async getDiskSpaceInfo(): Promise<DiskSpaceInfo> {
     this.checkServer();
-    const stats = statfsSync(env.ADDON_DIR);
+    const stats = statfsSync(env.DOWNLOADS_DIR);
     const free = stats.bavail * stats.bsize;
     const total = stats.blocks * stats.bsize;
     const used = total - free;
@@ -173,7 +177,7 @@ export class TorrentStoreService {
       );
 
     return {
-      path: env.ADDON_DIR,
+      path: env.DOWNLOADS_DIR,
       free,
       total,
       used,

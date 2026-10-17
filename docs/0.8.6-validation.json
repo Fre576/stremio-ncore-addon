@@ -1,0 +1,11 @@
+{
+  "date": "2026-10-17",
+  "version": "0.8.6",
+  "image": "sha256:b5e03f01b918b197a7de770337f28fd0f28c55468681da3b3a8188ceffadb8ac",
+  "build": {"go_tests": "PASS", "typescript": "PASS", "client": "PASS", "availability_cases": 4, "request_listener_tests": "PASS"},
+  "isolated_http_integration": {"checks": 55, "status": "PASS", "real_engine_kill_and_watchdog_api_recovery": true, "synthetic_file_deletion_and_unrelated_file_preservation": true},
+  "control_unit_tests": {"tests": 18, "status": "PASS"},
+  "ui_dom": {"status": "PASS", "checks": ["render", "capacity", "sessions", "escape_untrusted_titles", "keep_action", "login_required", "login_form", "password_cleared"]},
+  "production": {"checks": 13, "status": "PASS", "metadata_sources": 11, "keep_flag_test_restored": true, "temporary_admin_session_revoked": true, "deleted_downloads": 0, "video_probe": false},
+  "limits": ["No physical iPhone or Safari test", "No extended TV playback validation of this release", "No destructive failure injected into production"]
+}

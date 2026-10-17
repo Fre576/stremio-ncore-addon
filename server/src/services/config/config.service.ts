@@ -31,6 +31,8 @@ export class ConfigService {
     }
     this.deleteAfterHitnrunCronTask?.stop();
     this.deleteAfterHitnrunCronTask = null;
+    // The managed cleanup also honors retention, active leases and keep flags.
+    if (process.env.STREMIO_MANAGED_CLEANUP === '1') return;
     if (!this.torrentStoreService) {
       console.log('Missing torrent store service in config service.');
       return;

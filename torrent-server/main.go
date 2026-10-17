@@ -20,6 +20,7 @@ import (
 	"github.com/detarkende/stremio-ncore-addon/torrent-server/internal/playbacklimiter"
 	rangeparser "github.com/detarkende/stremio-ncore-addon/torrent-server/internal/range-parser"
 	responses "github.com/detarkende/stremio-ncore-addon/torrent-server/internal/responses"
+	"github.com/detarkende/stremio-ncore-addon/torrent-server/internal/safedelete"
 	gin "github.com/gin-gonic/gin"
 )
 
@@ -29,6 +30,7 @@ type AddTorrentRequest struct {
 }
 type PlaybackLimiter struct {
 	policyMu sync.Mutex
+	dataMu   sync.Mutex
 	manager  *playbacklimiter.Manager
 }
 
@@ -127,6 +129,8 @@ func main() {
 	})
 
 	r.POST("/torrents", func(c *gin.Context) {
+		playbackLimiter.dataMu.Lock()
+		defer playbackLimiter.dataMu.Unlock()
 		var json AddTorrentRequest
 		if err := c.ShouldBindBodyWithJSON(&json); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -138,6 +142,7 @@ func main() {
 			return
 		}
 		<-torrent.GotInfo()
+		playbackLimiter.manager.Register(torrent.InfoHash().HexString())
 		if json.Verify == nil || *json.Verify {
 			torrent.VerifyData()
 		}
@@ -159,24 +164,38 @@ func main() {
 	})
 
 	r.DELETE("/torrents/:infoHash", func(c *gin.Context) {
+		playbackLimiter.dataMu.Lock()
+		defer playbackLimiter.dataMu.Unlock()
 		infoHash := c.Param("infoHash")
 		torrent, ok := client.Torrent(infohash.FromHexString(infoHash))
 		if !ok {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Torrent not found"})
 			return
 		}
-		// Get torrent's root directory/files before dropping
-		downloadPath := cfg.DataDir
-		torrentName := torrent.Name()
-
-		torrent.Drop()
-
-		// Remove the data files
-		fullPath := path.Join(downloadPath, torrentName)
-		err := os.RemoveAll(fullPath)
+		fullPath, err := safedelete.Target(cfg.DataDir, torrent.Name())
+		if err == nil {
+			for _, other := range client.Torrents() {
+				if other != torrent && strings.EqualFold(other.Name(), torrent.Name()) {
+					err = fmt.Errorf("shared torrent data directory")
+					break
+				}
+			}
+		}
+		if err == nil && c.Query("cleanup") == "1" {
+			stats := responses.TorrentToSummaryResponse(torrent)
+			if stats.Progress < 1 || stats.Ratio < 1 {
+				err = fmt.Errorf("cleanup requires complete torrent and ratio at least one")
+			}
+		}
+		if err == nil {
+			err = playbackLimiter.manager.DeleteIdle(infoHash, func() error {
+				torrent.Drop()
+				return os.RemoveAll(fullPath)
+			})
+		}
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error":   "Torrent removed but failed to delete data files",
+			c.JSON(http.StatusConflict, gin.H{
+				"error":   "Torrent deletion refused or incomplete",
 				"details": err.Error(),
 			})
 			return

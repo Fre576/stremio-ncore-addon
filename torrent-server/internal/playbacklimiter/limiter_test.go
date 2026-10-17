@@ -6,6 +6,31 @@ import (
 	"time"
 )
 
+func TestDeletionCannotRaceAdmissionOrGrace(t *testing.T) {
+	m := New(time.Minute)
+	lease, _ := m.Acquire("a", "hash", "1080p")
+	called := false
+	remove := func() error { called = true; return nil }
+	if m.DeleteIdle("hash", remove) == nil || called {
+		t.Fatal("deleted active")
+	}
+	lease.Release()
+	if m.DeleteIdle("hash", remove) == nil || called {
+		t.Fatal("deleted grace")
+	}
+	m.now = func() time.Time { return time.Now().Add(2 * time.Minute) }
+	if err := m.DeleteIdle("hash", remove); err != nil || !called {
+		t.Fatal(err)
+	}
+	if _, err := m.Acquire("a", "hash", "1080p"); err == nil {
+		t.Fatal("stale handler acquired deleted torrent")
+	}
+	m.Register("hash")
+	if _, err := m.Acquire("a", "hash", "1080p"); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestExclusive4KAndTwoHD(t *testing.T) {
 	for _, first := range []string{"4k", "1080p"} {
 		m := New(time.Minute)

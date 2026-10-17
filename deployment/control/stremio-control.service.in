@@ -1,0 +1,31 @@
+[Unit]
+Description=Stremio managed status, recovery and HDD cleanup
+After=docker.service network-online.target
+Wants=docker.service
+RequiresMountsFor=@HDD_MOUNT@
+BindsTo=@HDD_MOUNT_UNIT@
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=simple
+ExecStartPre=/usr/bin/findmnt --noheadings --mountpoint @HDD_MOUNT@ --source UUID=@HDD_UUID@
+ExecStart=/usr/bin/python3 /usr/local/lib/stremio-control/control.py
+Environment=PYTHONDONTWRITEBYTECODE=1
+Restart=on-failure
+RestartSec=15
+TimeoutStopSec=50
+RuntimeDirectory=stremio-control
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=read-only
+PrivateTmp=yes
+ReadWritePaths=/run/stremio-control @HDD_MOUNT@/stremio-ncore/control @TORRENTS_DIR@
+StandardOutput=null
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

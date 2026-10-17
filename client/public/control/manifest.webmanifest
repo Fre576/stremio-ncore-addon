@@ -1,0 +1,1 @@
+{"name":"Stremio Filmfigyelő","short_name":"Filmfigyelő","lang":"hu","start_url":"/control/","scope":"/control/","display":"standalone","background_color":"#0b1020","theme_color":"#111827","icons":[{"src":"/control/icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any"},{"src":"/control/icon.png","sizes":"192x192","type":"image/png","purpose":"any"}]}

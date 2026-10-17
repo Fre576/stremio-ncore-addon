@@ -1,6 +1,8 @@
 # Linux Mint, Docker és külső HDD
 
-Ez egy újra felhasználható telepítési minta a 0.8.5 forrásához. Nem tartalmaz jelszót, tokent, adatbázist vagy letöltött videót. A meglévő, működő telepítést a GitHubra feltöltés nem módosítja. Az eredeti telepítés több compose fájlt használ; az itt közölt egyfájlos minta ugyanazt az SSD/HDD elrendezést teszi beállíthatóvá, saját helyben épített image-dzsel.
+Ez egy újra felhasználható telepítési minta a 0.8.6 forrásához. Nem tartalmaz jelszót, tokent, adatbázist vagy letöltött videót. A meglévő, működő telepítést a GitHubra feltöltés nem módosítja. Az eredeti telepítés több compose fájlt használ; az itt közölt egyfájlos minta ugyanazt az SSD/HDD elrendezést teszi beállíthatóvá, saját helyben épített image-dzsel.
+
+A telefonos állapotoldal, hibafelismerés és védett takarítás külön gazdagép-szolgáltatásának telepítése: [Filmfigyelő](../control/README-HU.md). Ehhez a kiegészítő Compose-felülírás is szükséges; a fenti alapminta önmagában csak az addon konténerét indítja.
 
 ## Elrendezés
 

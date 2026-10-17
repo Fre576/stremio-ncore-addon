@@ -1,6 +1,7 @@
 import { HttpStatusCode } from '@/types/http';
 import { AddTorrentRequest, InfoHash, TorrentResponse } from './types';
 import { rm } from 'fs/promises';
+import type { PlaybackStatus } from '@/utils/playback-availability';
 
 export class TorrentServerSdk {
   private torrentFilePaths = new Map<InfoHash, string>();
@@ -78,13 +79,8 @@ export class TorrentServerSdk {
     }
   }
 
-  public async getPlaybackLimiterStatus(): Promise<{
-    active: boolean;
-    activeInfoHash: string;
-    activeUntil: string;
-    activeTimeoutMs: number;
-  }> {
-    const req = await this.fetchWithTimeout(`${this.url}/playback-limiter`);
+  public async getPlaybackLimiterStatus(): Promise<PlaybackStatus> {
+    const req = await this.fetchWithTimeout(`${this.url}/playback-limiter`, {}, 3000);
     if (!req.ok) {
       const responseText = await req.text();
       throw Error(

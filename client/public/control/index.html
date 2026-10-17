@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="hu"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#111827"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Filmfigyelő"><meta name="referrer" content="no-referrer"><link rel="manifest" href="/control/manifest.webmanifest"><link rel="icon" href="/control/icon.svg"><link rel="apple-touch-icon" href="/control/icon.png"><link rel="stylesheet" href="/control/style.css"><title>Filmfigyelő</title></head>
+<body><main><header><div><p class="eyebrow">OTTHONI STREMIO</p><h1>Filmfigyelő<span class="dot" id="dot"></span></h1></div><button id="refresh" class="quiet" aria-label="Állapot frissítése">Frissítés</button></header>
+<p id="connection" role="status">Kapcsolódás a szerverhez…</p>
+<section id="login" hidden><h2>Bejelentkezés</h2><p>Az nCore szerver SNA rendszergazdai fiókjával lépj be. Ez nem a Stremio-felhő vagy a Linux jelszava.</p><form id="loginForm"><label>Felhasználónév<input name="username" autocomplete="username" required></label><label>Jelszó<input name="password" type="password" autocomplete="current-password" required></label><button>Belépés</button></form></section>
+<div id="dashboard" hidden><section class="hero"><p class="eyebrow">LEJÁTSZÁSI HELYEK</p><h2 id="capacity">—</h2><p id="policy"></p><small>Legfeljebb egy 4K film, vagy két HD film. Egy IP-címhez egy film tartozhat.</small></section>
+<div id="alerts" aria-live="polite"></div><section><h2>Most nézik <span id="sessionCount" class="badge">0</span></h2><div id="sessions"></div></section>
+<section><div class="row"><h2>HDD tárhely</h2><span id="diskFree"></span></div><div class="track"><div id="diskBar"></div></div><p id="diskDetails"></p><p id="cleanupPolicy" class="muted"></p><button id="cleanup" class="quiet">Takarítható filmek ellenőrzése</button><div id="cleanupPreview" role="status"></div></section>
+<section><h2>Letöltések</h2><p class="muted">A „Megőrzöm” jelölés kizárja a filmet az automatikus takarításból.</p><div id="torrents"></div></section>
+<section><h2>Hibafelismerés és események</h2><p id="recovery"></p><div id="events"></div></section>
+<footer><span id="version"></span> · Csak az otthoni hálózaton <button id="logout" class="text">Kilépés</button><p>iPhone: Safari → Megosztás → Hozzáadás a Főképernyőhöz. A szervernek és a HDD-nek működnie kell.</p></footer></div>
+<p id="message" role="status"></p></main><script src="/control/app.js" defer></script></body></html>

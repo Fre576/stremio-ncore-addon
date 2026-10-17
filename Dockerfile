@@ -27,7 +27,7 @@ RUN pnpm install
 FROM build-deps AS build
 COPY . .
 RUN pnpm run build:server
-RUN pnpm exec vitest run server/src/utils/guard-request-listener.test.ts
+RUN pnpm exec vitest run server/src/utils/guard-request-listener.test.ts server/src/utils/playback-availability.test.ts
 RUN pnpm run build:client
 
 FROM node-base AS runtime

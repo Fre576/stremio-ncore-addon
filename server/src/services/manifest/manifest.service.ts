@@ -21,7 +21,7 @@ export class ManifestService {
         configurationRequired: true,
       },
       baseUrl: config.addonUrl,
-      version: '0.8.5',
+      version: '0.8.6',
       name: 'nCore',
       description: 'Provides streams from a personal nCore account.',
       catalogs: CATALOG_DEFINITIONS.map((catalog) => ({

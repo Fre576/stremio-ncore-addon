@@ -1,0 +1,33 @@
+'use strict';
+const $ = (id) => document.getElementById(id);
+let busy = false;
+const fmt = (n) => { if (!Number.isFinite(n)) return '—'; const u = ['B','KiB','MiB','GiB','TiB']; let i=0; while(n>=1024&&i<4){n/=1024;i++;} return n.toLocaleString('hu-HU',{maximumFractionDigits:1})+' '+u[i]; };
+const el = (tag, text, cls) => {const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;};
+const date = (t) => new Date(t*1000).toLocaleString('hu-HU');
+async function api(path, data) {const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),10000);try{const r=await fetch('/api/control/'+path,{method:data?'POST':'GET',headers:data?{'Content-Type':'application/json'}:{},body:data?JSON.stringify(data):undefined,cache:'no-store',signal:controller.signal});if(r.status===401||r.status===403){$('login').hidden=false;$('dashboard').hidden=true;throw Error('Jelentkezz be az SNA rendszergazdai fiókoddal.');} const b=await r.json();if(!r.ok)throw Error(b.error||'A szerver nem érhető el.');return b;}finally{clearTimeout(timer);}}
+function render(s){
+ $('login').hidden=true;$('dashboard').hidden=false;$('version').textContent='v'+s.version;
+ if(!s.ready){$('connection').textContent=s.message;return;}
+ const age=Date.now()/1000-s.time;const ok=s.healthy&&age<45;
+ $('dot').className='dot '+(ok?'ok':'bad');$('connection').textContent=(ok?'A szerver elérhető':'Figyelmet igénylő állapot')+' · Frissítve: '+date(s.time)+(age>=45?' · Az adat elavult':'');
+ $('capacity').textContent=!s.healthy?'A foglaltság most nem ellenőrizhető':s.capacity.mode==='4k'?'4K lejátszás folyamatban':s.capacity.freeHD+'/2 HD hely szabad';
+ $('policy').textContent=s.healthy?s.capacity.message:'A források indítása előtt ellenőrizd a szerver állapotát.';
+ $('alerts').replaceChildren(...s.alerts.map(a=>el('div',a.message,'alert '+a.level)));
+ $('sessionCount').textContent=s.sessions.length;$('sessions').replaceChildren();
+ if(!s.sessions.length)$('sessions').append(el('p','Jelenleg nincs foglalt lejátszási hely.','muted'));
+ for(const x of s.sessions){const c=el('div',undefined,'card');c.append(el('p',x.device+' · '+x.ip,'device'),el('p',x.name,'title'),el('p',(x.quality==='4k'?'4K · kizárólagos':'HD / 1080p')+' · '+(x.connections?'Kapcsolat nyitva':'Újracsatlakozásra fenntartva'),'detail'));if(x.releaseAfter)c.append(el('p','Hely felszabadulása: '+new Date(x.releaseAfter).toLocaleTimeString('hu-HU'),'detail'));$('sessions').append(c);}
+ $('diskFree').textContent=s.disk?fmt(s.disk.free)+' szabad':'HDD nem elérhető';$('diskBar').style.width=s.disk?Math.min(100,s.disk.used/s.disk.total*100)+'%':'0%';$('diskDetails').textContent=s.disk?fmt(s.disk.used)+' foglalt / '+fmt(s.disk.total)+' összesen':'';
+ $('cleanupPolicy').textContent=s.cleanup.enabled?'Automatikus takarítás '+fmt(s.cleanup.low_bytes)+' szabad hely alatt, '+fmt(s.cleanup.target_bytes)+' szabad helyig. Csak teljes, legalább 1-es arányú, '+s.cleanup.min_days+' napja nem használt film törölhető.':'Az automatikus takarítás kikapcsolva.';
+ $('recovery').textContent=s.recoveryEnabled?'Automatikus helyreállítás aktív: három egymást követő szerverhiba után, korlátozott újrapróbálkozással. Hálózati szakadás vagy lassú torrent miatt nem indítja újra a szervert.':'Hibafelismerés aktív; automatikus újraindítás kikapcsolva.';
+ $('torrents').replaceChildren();if(!s.torrents.length)$('torrents').append(el('p','Nincs betöltött torrent.','muted'));
+ for(const t of s.torrents){const c=el('div',undefined,'card');c.append(el('p',t.name,'title'));const track=el('div',undefined,'track'),bar=el('div');bar.style.width=Math.min(100,t.progress*100)+'%';track.append(bar);c.append(track,el('p',(t.progress*100).toFixed(1)+'% · '+fmt(t.size)+' · ↓ '+fmt(t.downloadRate)+'/s · ↑ '+fmt(t.uploadRate)+'/s','detail'),el('p','Arány: '+t.ratio.toFixed(2)+(t.active?' · Használatban':''),'detail'));
+ const label=el('label',undefined,'keep'),check=el('input');check.type='checkbox';check.checked=t.keep;check.addEventListener('change',async()=>{check.disabled=true;try{await api('action',{action:'keep',infoHash:t.infoHash,keep:check.checked});$('message').textContent='Megőrzési beállítás mentve.';}catch(e){check.checked=!check.checked;$('message').textContent=e.message;}finally{check.disabled=false;}});label.append(check,document.createTextNode('Megőrzöm – ne törölje automatikusan'));c.append(label);$('torrents').append(c);}
+ $('events').replaceChildren(...s.events.slice().reverse().map(x=>el('p',date(x.time)+' · '+x.message,'detail')));if(!s.events.length)$('events').append(el('p','Még nincs új esemény.','muted'));
+}
+async function refresh(){if(busy)return;busy=true;$('refresh').disabled=true;try{render(await api('status'));}catch(e){$('connection').textContent=e.message;$('dot').className='dot bad';}finally{busy=false;$('refresh').disabled=false;}}
+$('refresh').addEventListener('click',refresh);
+$('loginForm').addEventListener('submit',async(e)=>{e.preventDefault();const f=e.target;const button=f.querySelector('button');button.disabled=true;try{const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:f.elements.namedItem('username').value,password:f.elements.namedItem('password').value})});if(!r.ok)throw Error('Sikertelen bejelentkezés.');f.elements.namedItem('password').value='';$('message').textContent='';await refresh();}catch(e){$('message').textContent=e.message;}finally{button.disabled=false;}});
+$('logout').addEventListener('click',async()=>{await fetch('/api/logout',{method:'POST'});await refresh();});
+$('cleanup').addEventListener('click',async()=>{const button=$('cleanup');button.disabled=true;try{const p=await api('action',{action:'cleanup-preview'});const box=$('cleanupPreview');box.replaceChildren(el('p',p.message));if(p.candidates.length){const list=el('ul');for(const c of p.candidates)list.append(el('li',c.name+' · '+fmt(c.size)));box.append(list);const go=el('button','A felsorolt filmek törlése');go.addEventListener('click',async()=>{if(!confirm('Végleg törlöd a most felsorolt letöltéseket? A megőrzött és aktív filmek védettek.'))return;go.disabled=true;try{const result=await api('action',{action:'cleanup',plan:p.plan});box.replaceChildren(el('p',result.message));await refresh();}catch(e){$('message').textContent=e.message;go.disabled=false;}});box.append(go);}}catch(e){$('message').textContent=e.message;}finally{button.disabled=false;}});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh();});
+setInterval(()=>{if(!document.hidden)refresh();},10000);refresh();

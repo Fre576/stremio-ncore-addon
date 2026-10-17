@@ -38,6 +38,7 @@ type session struct {
 type Manager struct {
 	mu       sync.Mutex
 	sessions map[string]*session
+	removed  map[string]bool
 	grace    time.Duration
 	now      func() time.Time
 }
@@ -57,7 +58,7 @@ type Status struct {
 }
 
 func New(grace time.Duration) *Manager {
-	return &Manager{sessions: make(map[string]*session), grace: grace, now: time.Now}
+	return &Manager{sessions: make(map[string]*session), removed: make(map[string]bool), grace: grace, now: time.Now}
 }
 
 func (m *Manager) prune() {
@@ -74,6 +75,9 @@ func (m *Manager) Acquire(ip, hash, quality string) (*Lease, error) {
 	defer m.mu.Unlock()
 	m.prune()
 	hash = strings.ToLower(hash)
+	if m.removed[hash] {
+		return nil, errors.New("torrent was removed; reload source list")
+	}
 	if ip == "" || hash == "" || (quality != "4k" && quality != "1080p") {
 		return nil, errors.New("invalid playback identity")
 	}
@@ -106,6 +110,31 @@ func (m *Manager) Acquire(ip, hash, quality string) (*Lease, error) {
 }
 
 func (l *Lease) Context() context.Context { return l.session.ctx }
+
+func (m *Manager) Register(hash string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.removed, strings.ToLower(hash))
+}
+
+// Serialize deletion against admission, including grace reservations. Tombstones
+// prevent a stale HTTP handler from acquiring a just-deleted Torrent pointer.
+func (m *Manager) DeleteIdle(hash string, remove func() error) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.prune()
+	hash = strings.ToLower(hash)
+	for _, s := range m.sessions {
+		if s.hash == hash {
+			return errors.New("torrent is active or awaiting reconnection")
+		}
+	}
+	m.removed[hash] = true
+	if err := remove(); err != nil {
+		return err
+	}
+	return nil
+}
 func (l *Lease) Release() {
 	l.once.Do(func() {
 		m := l.manager

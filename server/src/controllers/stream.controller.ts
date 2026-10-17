@@ -10,6 +10,7 @@ import { HttpStatusCode } from '@/types/http';
 import type { TorrentSourceManager } from '@/services/torrent-source';
 import { proxy } from 'hono/proxy';
 import { getConnInfo } from '@hono/node-server/conninfo';
+import { playbackAvailability, playbackQuality } from '@/utils/playback-availability';
 
 export class StreamController {
   constructor(
@@ -50,6 +51,8 @@ export class StreamController {
     });
 
     const { preferredLanguage } = user;
+    const capacity = await this.torrentStoreService.getPlaybackLimiterStatus().catch(() => null);
+    const clientIP = getConnInfo(c).remote.address ?? '';
 
     const streams = orderedTorrents.map((torrent, i) =>
       this.streamService.convertTorrentToStream({
@@ -63,6 +66,16 @@ export class StreamController {
       }),
     );
 
+    streams.forEach((stream, i) => {
+      const torrent = orderedTorrents[i]!;
+      const file = torrent.files[torrent.getMediaFileIndex({season, episode})];
+      const hint = capacity && clientIP ? playbackAvailability(capacity, clientIP, torrent.infoHash,
+        playbackQuality(`${file?.name ?? ''} ${torrent.getName()}`)) :
+        {blocked: false, message: '⚠ A szerver foglaltsága most nem ellenőrizhető.'};
+      stream.name = hint.blocked ? 'nCore · FOGLALT' : 'nCore';
+      stream.description = hint.message + '\n' + stream.description;
+    });
+    c.header('Cache-Control', 'no-store');
     return c.json({ streams });
   }
 
