@@ -13,7 +13,10 @@ import (
 )
 
 var ErrCapacity = errors.New("playback capacity reached: one exclusive 4K or two HD clients")
-var fourK = regexp.MustCompile(`(?i)(^|[^a-z0-9])(2160[pi]?|4k|uhd)([^a-z0-9]|$)`)
+
+// UHD can describe the disc/source of a downscaled 1080p encode. Only an
+// explicit 2160p/4K token overrides an explicit HD output resolution.
+var fourK = regexp.MustCompile(`(?i)(^|[^a-z0-9])(2160[pi]?|4k)([^a-z0-9]|$)`)
 var hd = regexp.MustCompile(`(?i)(^|[^a-z0-9])(1080[pi]?|720p|576p|540p|480p)([^a-z0-9]|$)`)
 
 // Unknown resolution is conservatively exclusive, never silently counted as HD.

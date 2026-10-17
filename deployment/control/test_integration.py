@@ -20,8 +20,8 @@ assert os.geteuid() == 0
 os.umask(0o077)
 setup = Path(os.environ.get('STREMIO_TEST_SETUP', '/opt/stremio-ncore'))
 version=next((arg.split('=',1)[1] for arg in sys.argv if arg.startswith('--version=')),'0.8.4')
-assert version in ['0.8.4','0.8.5','0.8.6']
-image = ('stremio-ncore-addon:control-' if version=='0.8.6' else 'stremio-ncore-addon:ip-limiter-')+version
+assert version in ['0.8.4','0.8.5','0.8.6','0.8.7']
+image = ('stremio-ncore-addon:control-' if version in ['0.8.6','0.8.7'] else 'stremio-ncore-addon:ip-limiter-')+version
 name = 'stremio-ncore-limiter-test'
 report_path = setup / 'limiter-build-test.json'
 log_path = setup / 'limiter-build-test.log'
@@ -65,7 +65,7 @@ try:
     fixture=setup/'limiter-tests'/str(int(time.time()))
     (fixture/'downloads').mkdir(parents=True)
     (fixture/'config').mkdir()
-    if version == '0.8.6':
+    if version in ['0.8.6','0.8.7']:
         (fixture/'control-socket').mkdir()
         class FakeControl(BaseHTTPRequestHandler):
             def log_message(self,*args):pass
@@ -83,13 +83,13 @@ try:
         user=db.execute('SELECT id FROM users LIMIT 1').fetchone()[0]
         db.execute('DELETE FROM device_tokens')
         db.execute('INSERT INTO device_tokens(token,name,user_id) VALUES(?,?,?)',('limiter-local-test','Isolated integration test',user))
-        if version == '0.8.6':
+        if version in ['0.8.6','0.8.7']:
             admin=db.execute("SELECT id FROM users WHERE role='admin' LIMIT 1").fetchone()[0]
             db.execute('INSERT INTO sessions(id,user_id,expires_at) VALUES(?,?,?)',(hashlib.sha256(b'control-integration-admin').hexdigest(),admin,int((time.time()+3600)*1000)))
     # A distinct Docker name is required; never replace an existing container.
     existing=subprocess.check_output(['docker','ps','-a','--format','{{.Names}}'],text=True).splitlines()
     assert name not in existing
-    extra_mount=['--mount','type=bind,src='+str(fixture/'control-socket')+',dst=/run/stremio-control,readonly'] if version=='0.8.6' else []
+    extra_mount=['--mount','type=bind,src='+str(fixture/'control-socket')+',dst=/run/stremio-control,readonly'] if version in ['0.8.6','0.8.7'] else []
     run(['docker','run','-d','--name',name,'-e','NCORE_USERNAME=isolated-test','-e','NCORE_PASSWORD=isolated-test','-p','127.0.0.1:18080:8080','-p','127.0.0.1:13000:3000','--mount','type=bind,src='+str(fixture)+',dst=/addon']+extra_mount+[image])
     started=True
     for attempt in range(60):
@@ -99,10 +99,12 @@ try:
         time.sleep(1)
     else:raise RuntimeError('Isolated Node server did not start')
     hashes={}
+    def fixture_filename(title):
+        return 'limiter-fixture.'+title+('.UHD' if version=='0.8.7' and title=='A.1080p' else '')+'.mkv'
     for title in ['A.1080p','B.1080p','C.1080p','D.2160p']:
-        filename='limiter-fixture.'+title+'.mkv'
+        filename=fixture_filename(title)
         data=(title.encode()*8192)[:32768]
-        if version in ['0.8.5','0.8.6'] and title=='A.1080p':data=b'A'*(64*1024*1024)
+        if version in ['0.8.5','0.8.6','0.8.7'] and title=='A.1080p':data=b'A'*(64*1024*1024)
         (fixture/'downloads'/filename).write_bytes(data)
         pieces=b''.join(hashlib.sha1(data[i:i+32768]).digest() for i in range(0,len(data),32768))
         info={b'name':filename.encode(),b'length':len(data),b'piece length':32768,b'pieces':pieces,b'private':1}
@@ -110,12 +112,15 @@ try:
         path=fixture/(title+'.torrent');path.write_bytes(encode({b'info':info}))
         check('add '+title,http(18080,'/torrents','POST',body={'path':'/addon/'+path.name,'verify':True})[0],200)
     def file(title,ip,method='GET'):
-        return http(18080,'/torrents/'+hashes[title]+'/files/limiter-fixture.'+title+'.mkv',method,{'Range':'bytes=0-63','X-Stremio-Client-IP':ip})[0]
+        return http(18080,'/torrents/'+hashes[title]+'/files/'+fixture_filename(title),method,{'Range':'bytes=0-63','X-Stremio-Client-IP':ip})[0]
     def state():return json.loads(http(18080,'/playback-limiter')[1])
     check('HEAD does not reserve',file('D.2160p','10.90.0.1','HEAD'),200)
     check('no HEAD session',len(state()['sessions']),0)
     check('first HD',file('A.1080p','10.90.0.1'),206)
+    if version=='0.8.7':
+        check('1080p.UHD source gets HD lease',state()['sessions'][0]['quality'],'1080p')
     check('second HD',file('B.1080p','10.90.0.2'),206)
+    if version=='0.8.7':check('second TV admitted alongside 1080p.UHD source',len(state()['sessions']),2)
     check('third HD rejected',file('C.1080p','10.90.0.3'),429)
     check('4K rejected during HD',file('D.2160p','10.90.0.3'),429)
     check('same-IP blocked 4K upgrade',file('D.2160p','10.90.0.1'),429)
@@ -149,7 +154,7 @@ try:
     clients=state()['sessions']
     assert len(clients)==1 and clients[0]['ip'] not in ['10.99.99.99','10.88.88.88']
     report['tests'].append('client IP derived from socket; spoofed headers ignored')
-    if version in ['0.8.5','0.8.6']:
+    if version in ['0.8.5','0.8.6','0.8.7']:
         before=subprocess.check_output(['docker','inspect','--format','{{.State.StartedAt}}',name],text=True).strip()
         for attempt in range(10):
             connection=HTTPConnection('127.0.0.1',13000,timeout=10)
@@ -162,7 +167,7 @@ try:
             check('Node survives client disconnect '+str(attempt+1),http(13000,'/manifest.json')[0],200)
         after=subprocess.check_output(['docker','inspect','--format','{{.State.StartedAt}}',name],text=True).strip()
         check('No Node/container restart during disconnects',after,before)
-    if version=='0.8.6':
+    if version in ['0.8.6','0.8.7']:
         check('Active torrent deletion refused',http(18080,'/torrents/'+hashes['A.1080p'],'DELETE')[0],409)
         http(18080,'/torrents','POST',body={'path':'/addon/B.1080p.torrent','verify':True})
         for attempt in range(50):

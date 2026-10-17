@@ -21,7 +21,7 @@ import threading
 import time
 import urllib.request
 
-VERSION = '0.8.6'
+VERSION = '0.8.7'
 HASH = re.compile(r'^[0-9a-f]{40}$')
 STOP = threading.Event()
 ENGINE_JS = """(async()=>{const out={};for(const [k,url] of [['manifest','http://127.0.0.1:3000/manifest.json'],['limiter','http://127.0.0.1:8080/playback-limiter'],['torrents','http://127.0.0.1:8080/torrents']]){try{const r=await fetch(url,{signal:AbortSignal.timeout(2500)});out[k]={status:r.status,data:await r.json()};}catch(e){out[k]={status:0,error:e.name};}}console.log(JSON.stringify(out));})()"""

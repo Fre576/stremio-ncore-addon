@@ -31,6 +31,32 @@ func TestDeletionCannotRaceAdmissionOrGrace(t *testing.T) {
 	}
 }
 
+func TestUHDSourceDoesNotOverrideExplicitHDOutput(t *testing.T) {
+	for _, name := range []string{
+		"Coraline.2009.1080p.UHD.BluRay.DD+7.1.DoVi.HDR10.x265.HuN-TRiNiTY",
+		"movie.UHD.1080p.mkv", "movie.720p.UHD.BluRay",
+	} {
+		if got := Classify(name); got != "1080p" {
+			t.Fatalf("%q classified as %q", name, got)
+		}
+		m := New(time.Minute)
+		if _, err := m.Acquire("tv1", "one", Classify(name)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := m.Acquire("tv2", "two", "1080p"); err != nil {
+			t.Fatal("second HD blocked", err)
+		}
+		if _, err := m.Acquire("tv3", "three", "1080p"); err != ErrCapacity {
+			t.Fatal("third HD admitted", err)
+		}
+	}
+	for _, name := range []string{"movie.2160p.UHD", "movie.4K.1080p", "movie.UHD", "unknown"} {
+		if got := Classify(name); got != "4k" {
+			t.Fatalf("%q classified as %q", name, got)
+		}
+	}
+}
+
 func TestExclusive4KAndTwoHD(t *testing.T) {
 	for _, first := range []string{"4k", "1080p"} {
 		m := New(time.Minute)

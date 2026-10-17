@@ -20,4 +20,12 @@ describe('source-list capacity hints', () => {
     for (const name of ['movie.2160p.mkv', 'movie.UHD', 'unknown', 'book4kids']) expect(playbackQuality(name)).toBe('4k');
     expect(playbackQuality('movie.1080p.mkv')).toBe('1080p');
   });
+  it('uses explicit HD output resolution ahead of UHD source wording', () => {
+    for (const name of ['Coraline.2009.1080p.UHD.BluRay.DD+7.1.DoVi.HDR10.x265.HuN-TRiNiTY', 'movie.UHD.1080p.mkv', 'movie.720p.UHD.BluRay']) {
+      expect(playbackQuality(name)).toBe('1080p');
+      expect(available({sessions: [s('a')]}, 'b', 'new', playbackQuality(name)).blocked).toBe(false);
+    }
+    expect(playbackQuality('movie.2160p.UHD')).toBe('4k');
+    expect(playbackQuality('movie.4K.1080p')).toBe('4k');
+  });
 });

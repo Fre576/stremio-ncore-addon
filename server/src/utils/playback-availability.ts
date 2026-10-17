@@ -4,7 +4,8 @@ export type PlaybackStatus = {
 
 // Match the engine's conservative classification, including unknown = exclusive.
 export function playbackQuality(name: string): '4k' | '1080p' {
-  if (/(^|[^a-z0-9])(2160[pi]?|4k|uhd)([^a-z0-9]|$)/i.test(name)) return '4k';
+  // UHD alone may be the source medium, not the output pixel resolution.
+  if (/(^|[^a-z0-9])(2160[pi]?|4k)([^a-z0-9]|$)/i.test(name)) return '4k';
   return /(^|[^a-z0-9])(1080[pi]?|720p|576p|540p|480p)([^a-z0-9]|$)/i.test(name) ? '1080p' : '4k';
 }
 
