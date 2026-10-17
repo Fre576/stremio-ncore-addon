@@ -4,7 +4,7 @@ COPY torrent-server/go.mod ./go.mod
 COPY torrent-server/go.sum ./go.sum
 RUN go mod download
 COPY ./torrent-server ./
-RUN CGO_ENABLED=0 GOOS=linux go build -o ./
+RUN CGO_ENABLED=0 go test ./... && CGO_ENABLED=0 GOOS=linux go build -o ./
 
 FROM node:20.16.0-alpine AS node-base
 WORKDIR /app

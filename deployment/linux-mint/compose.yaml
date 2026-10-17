@@ -3,7 +3,7 @@ services:
   stremio-ncore-addon:
     build:
       context: ../..
-    image: stremio-ncore-addon:0.8.3
+    image: stremio-ncore-addon:0.8.4
     container_name: stremio-ncore-addon
     env_file:
       - path: ./ncore.env

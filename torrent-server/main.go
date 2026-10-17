@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path"
@@ -15,6 +17,7 @@ import (
 
 	bittorrent "github.com/anacrolix/torrent"
 	"github.com/anacrolix/torrent/types/infohash"
+	"github.com/detarkende/stremio-ncore-addon/torrent-server/internal/playbacklimiter"
 	rangeparser "github.com/detarkende/stremio-ncore-addon/torrent-server/internal/range-parser"
 	responses "github.com/detarkende/stremio-ncore-addon/torrent-server/internal/responses"
 	gin "github.com/gin-gonic/gin"
@@ -25,13 +28,12 @@ type AddTorrentRequest struct {
 	Verify *bool  `json:"verify"`
 }
 type PlaybackLimiter struct {
-	mu             sync.Mutex
-	activeInfoHash string
-	activeUntil    time.Time
+	policyMu sync.Mutex
+	manager  *playbacklimiter.Manager
 }
 
 func (p *PlaybackLimiter) Start(client *bittorrent.Client) {
-	ticker := time.NewTicker(10 * time.Second)
+	ticker := time.NewTicker(time.Second)
 	go func() {
 		for range ticker.C {
 			p.ApplyPolicy(client)
@@ -39,67 +41,45 @@ func (p *PlaybackLimiter) Start(client *bittorrent.Client) {
 	}()
 }
 
-func (p *PlaybackLimiter) MarkActive(client *bittorrent.Client, infoHash string) {
-	p.mu.Lock()
-	p.activeInfoHash = strings.ToLower(infoHash)
-	p.activeUntil = time.Now().Add(4 * time.Hour)
-	p.mu.Unlock()
-
-	p.ApplyPolicy(client)
-}
-
 func (p *PlaybackLimiter) ApplyPolicy(client *bittorrent.Client) {
-	p.mu.Lock()
-	activeInfoHash := p.activeInfoHash
-	activeUntil := p.activeUntil
-	if activeInfoHash != "" && time.Now().After(activeUntil) {
-		activeInfoHash = ""
-		p.activeInfoHash = ""
-		p.activeUntil = time.Time{}
+	p.policyMu.Lock()
+	defer p.policyMu.Unlock()
+	sessions := p.manager.Snapshot()
+	allowed := make(map[string]bool)
+	for _, s := range sessions {
+		allowed[s.InfoHash] = true
 	}
-	p.mu.Unlock()
-
 	for _, torrent := range client.Torrents() {
-		if activeInfoHash == "" {
-			// Idle mode: keep seeding possible, but do not let old partial torrents
-			// resume downloading in the background and overload the torrent engine.
-			torrent.DisallowDataDownload()
-			torrent.AllowDataUpload()
-			continue
-		}
-
-		if torrent.InfoHash().HexString() == activeInfoHash {
+		if allowed[torrent.InfoHash().HexString()] {
 			torrent.AllowDataDownload()
 			torrent.AllowDataUpload()
-			continue
+		} else {
+			torrent.DisallowDataDownload()
+			if len(sessions) == 0 {
+				torrent.AllowDataUpload()
+			} else {
+				torrent.DisallowDataUpload()
+			}
 		}
-
-		torrent.DisallowDataDownload()
-		torrent.DisallowDataUpload()
 	}
 }
 
 func (p *PlaybackLimiter) Status(client *bittorrent.Client) gin.H {
 	p.ApplyPolicy(client)
-
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	active := p.activeInfoHash != "" && time.Now().Before(p.activeUntil)
-	activeUntil := ""
-	activeTimeoutMs := 0
-	if active {
-		activeUntil = p.activeUntil.Format(time.RFC3339)
-		activeTimeoutMs = int(time.Until(p.activeUntil).Milliseconds())
+	sessions := p.manager.Snapshot()
+	first := ""
+	if len(sessions) > 0 {
+		first = sessions[0].InfoHash
 	}
-
-	return gin.H{
-		"active":          active,
-		"activeInfoHash":  p.activeInfoHash,
-		"activeUntil":     activeUntil,
-		"activeTimeoutMs": activeTimeoutMs,
-	}
+	return gin.H{"active": len(sessions) > 0, "activeInfoHash": first, "sessions": sessions, "graceSeconds": 60, "policy": "one-exclusive-4k-or-two-hd"}
 }
+
+type contextReader struct {
+	ctx    context.Context
+	reader bittorrent.Reader
+}
+
+func (r contextReader) Read(b []byte) (int, error) { return r.reader.ReadContext(r.ctx, b) }
 
 func main() {
 	var port int
@@ -130,7 +110,7 @@ func main() {
 		log.Fatal(err)
 	}
 	defer client.Close()
-	playbackLimiter := &PlaybackLimiter{}
+	playbackLimiter := &PlaybackLimiter{manager: playbacklimiter.New(time.Minute)}
 	playbackLimiter.Start(client)
 
 	r := gin.Default()
@@ -143,17 +123,6 @@ func main() {
 	})
 
 	r.GET("/playback-limiter", func(c *gin.Context) {
-		c.JSON(http.StatusOK, playbackLimiter.Status(client))
-	})
-
-	r.POST("/playback-limiter/:infoHash", func(c *gin.Context) {
-		infoHash := c.Param("infoHash")
-		_, ok := client.Torrent(infohash.FromHexString(infoHash))
-		if !ok {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Torrent not found"})
-			return
-		}
-		playbackLimiter.MarkActive(client, infoHash)
 		c.JSON(http.StatusOK, playbackLimiter.Status(client))
 	})
 
@@ -250,8 +219,6 @@ func main() {
 			return
 		}
 
-		playbackLimiter.MarkActive(client, infoHash)
-
 		// Get file size
 		fileSize := targetFile.Length()
 
@@ -274,6 +241,27 @@ func main() {
 			c.Header("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, fileSize))
 		}
 
+		ip := net.ParseIP(c.GetHeader("X-Stremio-Client-IP"))
+		if ip == nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "missing trusted client IP"})
+			return
+		}
+		quality := playbacklimiter.Classify(targetFile.Path() + " " + torrent.Name())
+		lease, err := playbackLimiter.manager.Acquire(ip.String(), infoHash, quality)
+		if err != nil {
+			log.Printf("playback_denied ip=%s quality=%s hash=%s", ip.String(), quality, infoHash)
+			c.Header("Retry-After", "60")
+			c.JSON(http.StatusTooManyRequests, gin.H{"error": "A szerver foglalt: egy 4K vagy ket HD lejatszas engedelyezett."})
+			return
+		}
+		defer func() { lease.Release(); playbackLimiter.ApplyPolicy(client) }()
+		playbackLimiter.ApplyPolicy(client)
+		ctx, cancel := context.WithCancel(c.Request.Context())
+		stopCancel := context.AfterFunc(lease.Context(), cancel)
+		defer stopCancel()
+		defer cancel()
+		log.Printf("playback_admitted ip=%s quality=%s hash=%s range=%s", ip.String(), quality, infoHash, rangeHeader)
+
 		// Set headers
 		c.Status(statusCode)
 		c.Header("Accept-Ranges", "bytes")
@@ -291,7 +279,7 @@ func main() {
 
 		// Stream the range
 		// Create a limited reader to read only the requested range
-		limitedReader := io.LimitReader(reader, end-start+1)
+		limitedReader := io.LimitReader(contextReader{ctx: ctx, reader: reader}, end-start+1)
 		c.DataFromReader(statusCode, end-start+1, getContentType(filepath), limitedReader, nil)
 	})
 

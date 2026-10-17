@@ -2,12 +2,14 @@
 
 # nCore addon
 
-## Magyar leírás – 0.8.3
+## Magyar leírás – 0.8.4
+
+- [0.8.4: egy kizárólagos 4K vagy két HD, IP-címenként egy torrent](./docs/VERZIO-0.8.4-HU.md)
 
 - [A jelenlegi változat teljes működése: keresés, lejátszás, letöltés, visszatöltés, korlátok](./docs/VERZIO-0.8.3-HU.md)
 - [Linux Mint és külső HDD: telepítési, indítási és leválasztási útmutató](./deployment/linux-mint/README.hu.md)
 
-A 0.8.3 a `codex/ncore-catalog-playback-limiter` ág funkcióit és a Linuxon használt azonosító- és HTTPS-lejátszási javításokat tartalmazza. A Docker-képet ebből a forrásból kell felépíteni; a régi `detarkende/stremio-ncore-addon:0.8.0` kép nem tartalmazza ezeket.
+A 0.8.4 a `codex/ncore-catalog-playback-limiter` ág funkcióit, az azonosító- és HTTPS-lejátszási javításokat, valamint az új IP-alapú kapacitáskezelést tartalmazza. A Docker-képet ebből a forrásból kell felépíteni; a régi `detarkende/stremio-ncore-addon:0.8.0` kép nem tartalmazza ezeket.
 
 A self-hostable Stremio addon that lets you stream content straight from nCore.
 

@@ -57,6 +57,9 @@ export class TorrentStoreService {
         '-d',
         env.DOWNLOADS_DIR,
       ]);
+      // Drain the child pipes: otherwise request logging can eventually block Go.
+      this.torrentServerInstance.stdout.pipe(process.stdout);
+      this.torrentServerInstance.stderr.pipe(process.stderr);
     } else {
       let isServerUp = false,
         retryCount = 0;

@@ -9,6 +9,7 @@ import { playSchema } from '@/schemas/play.schema';
 import { HttpStatusCode } from '@/types/http';
 import type { TorrentSourceManager } from '@/services/torrent-source';
 import { proxy } from 'hono/proxy';
+import { getConnInfo } from '@hono/node-server/conninfo';
 
 export class StreamController {
   constructor(
@@ -90,15 +91,24 @@ export class StreamController {
       const torrentFilePath = await this.torrentService.downloadTorrentFile(torrentUrl);
       torrent = await this.torrentStoreService.addTorrent(torrentFilePath, { verify: false });
     }
-    await this.torrentStoreService.markPlaybackActive(torrent.infoHash);
     const file = torrent.files[Number(fileIdx)]!;
+    const clientIP = getConnInfo(c).remote.address;
+    if (!clientIP) {
+      throw new HTTPException(HttpStatusCode.INTERNAL_SERVER_ERROR, {
+        message: 'Cannot identify playback client IP',
+      });
+    }
 
     return proxy(
       this.torrentStoreService.getFileStreamingUrl({
         infoHash: torrent.infoHash,
         filePath: file.path,
       }),
-      { headers: { ...c.req.header() } },
+      {
+        method: c.req.method,
+        signal: c.req.raw.signal,
+        headers: { ...c.req.header(), 'x-stremio-client-ip': clientIP },
+      },
     );
   }
 }
